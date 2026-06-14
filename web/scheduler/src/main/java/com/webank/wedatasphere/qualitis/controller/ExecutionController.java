@@ -18,7 +18,6 @@ package com.webank.wedatasphere.qualitis.controller;
 
 import com.webank.wedatasphere.qualitis.constant.InvokeTypeEnum;
 import com.webank.wedatasphere.qualitis.constants.ResponseStatusConstants;
-import com.webank.wedatasphere.qualitis.exception.PermissionDeniedRequestException;
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
 import com.webank.wedatasphere.qualitis.request.GroupListExecutionRequest;
 import com.webank.wedatasphere.qualitis.request.KillApplicationsRequest;
@@ -27,6 +26,7 @@ import com.webank.wedatasphere.qualitis.request.RuleListExecutionRequest;
 import com.webank.wedatasphere.qualitis.response.GeneralResponse;
 import com.webank.wedatasphere.qualitis.service.ClusterInfoService;
 import com.webank.wedatasphere.qualitis.service.ExecutionService;
+import com.webank.wedatasphere.qualitis.util.ExecutionResponseHelper;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +41,6 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
-import java.util.concurrent.ExecutionException;
 
 /**
  * @author howeye
@@ -69,18 +68,9 @@ public class ExecutionController {
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse projectExecution(ProjectExecutionRequest request) throws UnExpectedRequestException, InterruptedException {
         String loginUser = HttpUtils.getUserName(httpServletRequest);
-        try {
-            GeneralResponse generalResponse = executionService.commonHandleRuleOrProjectMethod(request, null, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser);
-            return new GeneralResponse<>(generalResponse.getCode(), generalResponse.getMessage(), generalResponse.getData());
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (InterruptedException e) {
-            LOGGER.error("Interrupted!", e);
-            Thread.currentThread().interrupt();
-            throw new InterruptedException(e.getMessage());
-        } catch (ExecutionException | PermissionDeniedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        }
+        return ExecutionResponseHelper.executeAndWrap(
+            () -> executionService.commonHandleRuleOrProjectMethod(request, null, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser)
+        );
     }
 
     @POST
@@ -89,18 +79,9 @@ public class ExecutionController {
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse groupListExecution(GroupListExecutionRequest request) throws UnExpectedRequestException, InterruptedException {
         String loginUser = HttpUtils.getUserName(httpServletRequest);
-        try {
-            GeneralResponse generalResponse = executionService.handleRuleGroupListMethod(request, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser);
-            return new GeneralResponse<>(generalResponse.getCode(), generalResponse.getMessage(), generalResponse.getData());
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (InterruptedException e) {
-            LOGGER.error("Interrupted!", e);
-            Thread.currentThread().interrupt();
-            throw new InterruptedException(e.getMessage());
-        } catch (ExecutionException | PermissionDeniedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        }
+        return ExecutionResponseHelper.executeAndWrap(
+            () -> executionService.handleRuleGroupListMethod(request, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser)
+        );
     }
 
     @POST
@@ -109,18 +90,9 @@ public class ExecutionController {
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse ruleListExecution(RuleListExecutionRequest request) throws UnExpectedRequestException, InterruptedException {
         String loginUser = HttpUtils.getUserName(httpServletRequest);
-        try {
-            GeneralResponse<?> generalResponse = executionService.commonHandleRuleOrProjectMethod(null, request, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser);
-            return new GeneralResponse<>(generalResponse.getCode(), generalResponse.getMessage(), generalResponse.getData());
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (InterruptedException e) {
-            LOGGER.error("Interrupted!", e);
-            Thread.currentThread().interrupt();
-            throw new InterruptedException(e.getMessage());
-        } catch (ExecutionException | PermissionDeniedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        }
+        return ExecutionResponseHelper.executeAndWrap(
+            () -> executionService.commonHandleRuleOrProjectMethod(null, request, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser)
+        );
     }
 
     @GET

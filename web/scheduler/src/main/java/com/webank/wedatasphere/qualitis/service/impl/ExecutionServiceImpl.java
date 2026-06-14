@@ -24,6 +24,7 @@ import com.webank.wedatasphere.qualitis.exception.JobKillException;
 import com.webank.wedatasphere.qualitis.exception.PermissionDeniedRequestException;
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
 import com.webank.wedatasphere.qualitis.parser.LocaleParser;
+import com.webank.wedatasphere.qualitis.request.BaseExecutionRequest;
 import com.webank.wedatasphere.qualitis.request.GroupExecutionRequest;
 import com.webank.wedatasphere.qualitis.request.GroupListExecutionRequest;
 import com.webank.wedatasphere.qualitis.request.KillApplicationsRequest;
@@ -91,16 +92,25 @@ public class ExecutionServiceImpl implements ExecutionService {
     @Qualifier("ruleExecutionThreadPool")
     private ThreadPoolExecutor ruleExecutionThreadPool;
 
-    @Override
-    @Transactional(rollbackFor = {RuntimeException.class, UnExpectedRequestException.class})
-    public GeneralResponse projectExecution(ProjectExecutionRequest request, Integer code, String loginUser)
-            throws UnExpectedRequestException, PermissionDeniedRequestException {
+    /**
+     * Common pre-processing for execution requests:
+     * - Validate executionUser is not null
+     * - Default dyNamicPartitionPrefix to empty string
+     */
+    private void preProcessExecutionRequest(BaseExecutionRequest request) throws UnExpectedRequestException {
         if (request.getExecutionUser() == null) {
             throw new UnExpectedRequestException("Execution user {&CAN_NOT_BE_NULL_OR_EMPTY}");
         }
         if (request.getDyNamicPartitionPrefix() == null) {
             request.setDyNamicPartitionPrefix("");
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = {RuntimeException.class, UnExpectedRequestException.class})
+    public GeneralResponse projectExecution(ProjectExecutionRequest request, Integer code, String loginUser)
+            throws UnExpectedRequestException, PermissionDeniedRequestException {
+        preProcessExecutionRequest(request);
         try {
             return outerExecutionService.projectExecution(request, code, loginUser);
         } catch (UnExpectedRequestException | PermissionDeniedRequestException e) {
@@ -112,12 +122,7 @@ public class ExecutionServiceImpl implements ExecutionService {
     @Transactional(rollbackFor = {RuntimeException.class, UnExpectedRequestException.class})
     public GeneralResponse ruleListExecution(RuleListExecutionRequest request, Integer invokeCode, String loginUser)
             throws UnExpectedRequestException, PermissionDeniedRequestException {
-        if (request.getExecutionUser() == null) {
-            throw new UnExpectedRequestException("Execution user {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-        if (request.getDyNamicPartitionPrefix() == null) {
-            request.setDyNamicPartitionPrefix("");
-        }
+        preProcessExecutionRequest(request);
         try {
             return outerExecutionService.ruleListExecution(request, invokeCode, loginUser);
         } catch (UnExpectedRequestException e) {
@@ -213,40 +218,46 @@ public class ExecutionServiceImpl implements ExecutionService {
         } else if (ruleListExecutionRequest != null) {
             applicationProjectResponse = ruleExecutionThreadPool.submit(new RuleKindSumbitCallable(null, ruleListExecutionRequest, InvokeTypeEnum.UI_INVOKE.getCode(), executionService, loginUser));
         }
-        if (enableAsyncRequest) {
-            LOGGER.info("The task has been submitted asynchronously");
-            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_DISPATCH_TASK}", null);
-        }
-        if (applicationProjectResponse != null && StringUtils.isBlank(applicationProjectResponse.get().getExceptionMessage())) {
-            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_DISPATCH_TASK}", applicationProjectResponse.get());
-        }
-
-        if (applicationProjectResponse != null) {
-            return new GeneralResponse<>(
-                ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_EXECUTE_PROJECT}, caused by: " + applicationProjectResponse.get().getExceptionMessage(), null);
-        } else {
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_EXECUTE_PROJECT}, caused by: " + null, null);
-        }
-
+        return submitToThreadPoolAndGet(applicationProjectResponse);
     }
 
     @Override
     public GeneralResponse handleRuleGroupListMethod(GroupListExecutionRequest groupListExecutionRequest, Integer code, String loginUser) throws ExecutionException, InterruptedException {
         Future<ApplicationTaskSimpleResponse> applicationTaskSimpleResponse = ruleExecutionThreadPool.submit(new RuleGroupSumbitCallable(groupListExecutionRequest, InvokeTypeEnum.UI_INVOKE.getCode(), executionService, loginUser));
+        return submitToThreadPoolAndGet(applicationTaskSimpleResponse);
+    }
+
+    /**
+     * Common logic for submitting to thread pool and getting result.
+     * Handles async mode check, Future.get(), and result wrapping.
+     */
+    private GeneralResponse submitToThreadPoolAndGet(Future<?> future) throws ExecutionException, InterruptedException {
         if (enableAsyncRequest) {
             LOGGER.info("The task has been submitted asynchronously");
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_DISPATCH_TASK}", null);
         }
-        if (applicationTaskSimpleResponse != null && StringUtils.isBlank(applicationTaskSimpleResponse.get().getExceptionMessage())) {
-            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_DISPATCH_TASK}", null);
+        if (future != null) {
+            Object result = future.get();
+            String exceptionMessage = getExceptionMessage(result);
+            if (StringUtils.isBlank(exceptionMessage)) {
+                return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_DISPATCH_TASK}", result);
+            }
+            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR,
+                "{&FAILED_TO_EXECUTE_PROJECT}, caused by: " + exceptionMessage, null);
         }
-
-        if (applicationTaskSimpleResponse != null) {
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_EXECUTE_PROJECT}, caused by: " + applicationTaskSimpleResponse.get().getExceptionMessage(), null);
-        } else {
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_EXECUTE_PROJECT}, caused by: " + null, null);
-        }
-
+        return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR,
+            "{&FAILED_TO_EXECUTE_PROJECT}, caused by: " + null, null);
     }
 
+    /**
+     * Extract exceptionMessage from the thread pool result (either ApplicationProjectResponse or ApplicationTaskSimpleResponse).
+     */
+    private String getExceptionMessage(Object result) {
+        if (result instanceof ApplicationProjectResponse) {
+            return ((ApplicationProjectResponse) result).getExceptionMessage();
+        } else if (result instanceof ApplicationTaskSimpleResponse) {
+            return ((ApplicationTaskSimpleResponse) result).getExceptionMessage();
+        }
+        return null;
+    }
 }

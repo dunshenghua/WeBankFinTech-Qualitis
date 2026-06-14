@@ -19,15 +19,13 @@ package com.webank.wedatasphere.qualitis.request;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
 import com.webank.wedatasphere.qualitis.project.request.CommonChecker;
+
 import java.util.List;
 
 /**
  * @author howeye
  */
-public class GeneralExecutionRequest {
-    @JsonProperty("job_id")
-    private String jobId;
-
+public class GeneralExecutionRequest extends BaseExecutionRequest {
     @JsonProperty("project_id")
     private Long projectId;
 
@@ -36,15 +34,6 @@ public class GeneralExecutionRequest {
 
     @JsonProperty("rule_list")
     private List<Long> ruleList;
-
-    @JsonProperty("execution_user")
-    private String executionUser;
-
-    @JsonProperty("execution_param")
-    private String executionParam;
-
-    @JsonProperty("create_user")
-    private String createUser;
 
     @JsonProperty(value = "project_name")
     private String projectName;
@@ -62,41 +51,8 @@ public class GeneralExecutionRequest {
     @JsonProperty("node_name")
     private String nodeName;
 
-
-    @JsonProperty("fps_hash")
-    private String fpsHashValue;
-    @JsonProperty("fps_file_id")
-    private String fpsFileId;
-
-    @JsonProperty("cluster_name")
-    private String clusterName;
-    @JsonProperty("startup_param_name")
-    private String startupParamName;
-    @JsonProperty("set_flag")
-    private String setFlag;
-
-    @JsonProperty("dynamic_partition_bool")
-    private boolean dyNamicPartition;
-    @JsonProperty("dynamic_partition_prefix")
-    private String dyNamicPartitionPrefix;
-    @JsonProperty("bool_async")
-    private boolean async;
-
-    @JsonProperty("start_time")
-    private String startTime;
-    @JsonProperty("end_time")
-    private String endTime;
-
     public GeneralExecutionRequest() {
         this.crossTable = false;
-    }
-
-    public String getJobId() {
-        return jobId;
-    }
-
-    public void setJobId(String jobId) {
-        this.jobId = jobId;
     }
 
     public Long getProjectId() {
@@ -121,30 +77,6 @@ public class GeneralExecutionRequest {
 
     public void setRuleList(List<Long> ruleList) {
         this.ruleList = ruleList;
-    }
-
-    public String getExecutionUser() {
-        return executionUser;
-    }
-
-    public void setExecutionUser(String executionUser) {
-        this.executionUser = executionUser;
-    }
-
-    public String getExecutionParam() {
-        return executionParam;
-    }
-
-    public void setExecutionParam(String executionParam) {
-        this.executionParam = executionParam;
-    }
-
-    public String getCreateUser() {
-        return createUser;
-    }
-
-    public void setCreateUser(String createUser) {
-        this.createUser = createUser;
     }
 
     public String getProjectName() {
@@ -211,93 +143,10 @@ public class GeneralExecutionRequest {
         this.nodeName = nodeName;
     }
 
-    public String getFpsHashValue() {
-        return fpsHashValue;
-    }
-
-    public void setFpsHashValue(String fpsHashValue) {
-        this.fpsHashValue = fpsHashValue;
-    }
-
-    public String getFpsFileId() {
-        return fpsFileId;
-    }
-
-    public void setFpsFileId(String fpsFileId) {
-        this.fpsFileId = fpsFileId;
-    }
-
-    public String getClusterName() {
-        return clusterName;
-    }
-
-    public void setClusterName(String clusterName) {
-        this.clusterName = clusterName;
-    }
-
-    public String getStartupParamName() {
-        return startupParamName;
-    }
-
-    public void setStartupParamName(String startupParamName) {
-        this.startupParamName = startupParamName;
-    }
-
-    public String getSetFlag() {
-        return setFlag;
-    }
-
-    public void setSetFlag(String setFlag) {
-        this.setFlag = setFlag;
-    }
-
-    public boolean getDyNamicPartition() {
-        return dyNamicPartition;
-    }
-
-    public void setDyNamicPartition(boolean dyNamicPartition) {
-        this.dyNamicPartition = dyNamicPartition;
-    }
-
-    public String getDyNamicPartitionPrefix() {
-        return dyNamicPartitionPrefix;
-    }
-
-    public void setDyNamicPartitionPrefix(String dyNamicPartitionPrefix) {
-        this.dyNamicPartitionPrefix = dyNamicPartitionPrefix;
-    }
-
-    public boolean getAsync() {
-        return async;
-    }
-
-    public void setAsync(boolean async) {
-        this.async = async;
-    }
-
-    public String getStartTime() {
-        return startTime;
-    }
-
-    public void setStartTime(String startTime) {
-        this.startTime = startTime;
-    }
-
-    public String getEndTime() {
-        return endTime;
-    }
-
-    public void setEndTime(String endTime) {
-        this.endTime = endTime;
-    }
-
     public static void checkRequest(GeneralExecutionRequest request) throws UnExpectedRequestException {
         CommonChecker.checkObject(request, "Request");
-        CommonChecker.checkString(request.getCreateUser(), "Create User");
-        CommonChecker.checkString(request.getExecutionUser(), "Execution User");
-
-        RuleListExecutionRequest.sameParameterVerificationMethod(request.getExecutionParam(), "{&EXECUTION_VARIABLES_HAVE_THE_SAME_VARIABLE_NAME}: ");
-        RuleListExecutionRequest.sameParameterVerificationMethod(request.getStartupParamName(), "{&DYNAMIC_ENGINE_HAVE_THE_SAME_VARIABLE_NAME}: ");
+        request.checkCommonFields();
+        request.validateExecutionParams();
     }
 
     @Override
@@ -306,9 +155,9 @@ public class GeneralExecutionRequest {
             "projectId=" + projectId +
             ", groupId=" + groupId +
             ", ruleList=" + ruleList +
-            ", executionUser='" + executionUser + '\'' +
-            ", executionParam='" + executionParam + '\'' +
-            ", createUser='" + createUser + '\'' +
+            ", executionUser='" + getExecutionUser() + '\'' +
+            ", executionParam='" + getExecutionParam() + '\'' +
+            ", createUser='" + getCreateUser() + '\'' +
             ", projectName='" + projectName + '\'' +
             ", ruleNameList=" + ruleNameList +
             ", crossTable=" + crossTable +
@@ -316,14 +165,14 @@ public class GeneralExecutionRequest {
             ", cluster='" + cluster + '\'' +
             ", table='" + table + '\'' +
             ", nodeName='" + nodeName + '\'' +
-            ", fpsHashValue='" + fpsHashValue + '\'' +
-            ", fpsFileId='" + fpsFileId + '\'' +
-            ", clusterName='" + clusterName + '\'' +
-            ", startupParamName='" + startupParamName + '\'' +
-            ", setFlag='" + setFlag + '\'' +
-            ", dyNamicPartition=" + dyNamicPartition +
-            ", dyNamicPartitionPrefix='" + dyNamicPartitionPrefix + '\'' +
-            ", async=" + async +
+            ", fpsHashValue='" + getFpsHashValue() + '\'' +
+            ", fpsFileId='" + getFpsFileId() + '\'' +
+            ", clusterName='" + getClusterName() + '\'' +
+            ", startupParamName='" + getStartupParamName() + '\'' +
+            ", setFlag='" + getSetFlag() + '\'' +
+            ", dyNamicPartition=" + getDyNamicPartition() +
+            ", dyNamicPartitionPrefix='" + getDyNamicPartitionPrefix() + '\'' +
+            ", async=" + getAsync() +
             '}';
     }
 }
