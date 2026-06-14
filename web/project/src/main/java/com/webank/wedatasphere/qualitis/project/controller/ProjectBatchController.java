@@ -52,6 +52,7 @@ import java.util.List;
 public class ProjectBatchController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ProjectBatchController.class);
+    private static final int MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
     @Autowired
     private ProjectBatchService projectBatchService;
@@ -69,9 +70,8 @@ public class ProjectBatchController {
         try {
             int fileSize = fileInputStream.available();
             LOGGER.info("Upload zip file size: {} MB", fileSize / (1024 * 1024));
-            int maxFileSize = 10 * 1024 * 1024;
-            if(fileSize > maxFileSize) {
-                throw new UnExpectedRequestException("File size exceeds limit: 10 MB");
+            if(fileSize > MAX_UPLOAD_FILE_SIZE_BYTES) {
+                throw new UnExpectedRequestException("File size exceeds limit: " + MAX_UPLOAD_FILE_SIZE_BYTES / (1024 * 1024) + " MB");
             }
             return fileService.uploadFile(fileInputStream, fileDisposition, "");
         } catch (UnExpectedRequestException e) {
@@ -114,20 +114,8 @@ public class ProjectBatchController {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public GeneralResponse downloadProject(DownloadProjectRequest downloadProjectRequest, @Context HttpServletResponse response)
-        throws UnExpectedRequestException {
-        List<Project> projectLists= Lists.newArrayList();
-        try {
-            projectLists = projectBatchService.checkProjects(downloadProjectRequest.getProjectId());
-            return projectBatchService.downloadProjectsToLocalOrGit(downloadProjectRequest, response);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error("Failed to download projects and rules, caused by system error: {}", e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_DOWNLOAD_PROJECTS_AND_RULES}", null);
-        }
+        throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return executeDownload(downloadProjectRequest, response);
     }
 
     @POST
@@ -136,7 +124,12 @@ public class ProjectBatchController {
     @Produces(MediaType.APPLICATION_JSON)
     public GeneralResponse downloadProjectToGit(DownloadProjectRequest downloadProjectRequest, @Context HttpServletResponse response)
         throws UnExpectedRequestException, PermissionDeniedRequestException {
-        List<Project> projectLists= Lists.newArrayList();
+        return executeDownload(downloadProjectRequest, response);
+    }
+
+    private GeneralResponse executeDownload(DownloadProjectRequest downloadProjectRequest, HttpServletResponse response)
+        throws UnExpectedRequestException, PermissionDeniedRequestException {
+        List<Project> projectLists = Lists.newArrayList();
         try {
             projectLists = projectBatchService.checkProjects(downloadProjectRequest.getProjectId());
             return projectBatchService.downloadProjectsToLocalOrGit(downloadProjectRequest, response);
