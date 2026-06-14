@@ -71,6 +71,15 @@ public interface RuleMetricService {
   GeneralResponse<RuleMetricResponse> deleteRuleMetric(long id) throws UnExpectedRequestException, PermissionDeniedRequestException;
 
   /**
+   * Batch delete rule metrics.
+   * @param ids
+   * @return
+   * @throws UnExpectedRequestException
+   * @throws PermissionDeniedRequestException
+   */
+  GeneralResponse<RuleMetricResponse> deleteBatchRuleMetric(List<Long> ids) throws UnExpectedRequestException, PermissionDeniedRequestException;
+
+  /**
    * Modify rule metric.
    * @param request
    * @return

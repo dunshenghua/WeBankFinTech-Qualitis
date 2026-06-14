@@ -6,7 +6,6 @@ import com.webank.wedatasphere.qualitis.exception.PermissionDeniedRequestExcepti
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
 import com.webank.wedatasphere.qualitis.metadata.response.DataInfo;
 import com.webank.wedatasphere.qualitis.project.response.HiveRuleDetail;
-import com.webank.wedatasphere.qualitis.project.service.ProjectBatchService;
 import com.webank.wedatasphere.qualitis.request.*;
 import com.webank.wedatasphere.qualitis.response.*;
 import com.webank.wedatasphere.qualitis.service.RuleMetricService;
@@ -32,9 +31,6 @@ public class RuleMetricController {
 
   @Autowired
   private RuleMetricService ruleMetricService;
-
-  @Autowired
-  private ProjectBatchService projectBatchService;
 
   private static final Logger LOGGER = LoggerFactory.getLogger(RuleMetricController.class);
 
@@ -108,10 +104,7 @@ public class RuleMetricController {
       throws UnExpectedRequestException, PermissionDeniedRequestException {
     try {
       DeleteBatchRuleMetricRequest.checkRequest(deleteBatchRuleMetricRequest);
-      for (Long ruleMetricId : deleteBatchRuleMetricRequest.getRuleMetricIds()) {
-        ruleMetricService.deleteRuleMetric(ruleMetricId);
-      }
-      return new GeneralResponse<>(ResponseStatusConstants.OK, "{&DELETE_RULE_METRIC_SUCCESSFULLY}", null);
+      return ruleMetricService.deleteBatchRuleMetric(deleteBatchRuleMetricRequest.getRuleMetricIds());
     } catch (UnExpectedRequestException e) {
       LOGGER.error(e.getMessage(), e);
       throw e;

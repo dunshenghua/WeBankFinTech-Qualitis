@@ -94,8 +94,6 @@ public class ImsRuleMetricServiceImpl implements ImsRuleMetricService {
 
 
     private HttpServletRequest httpServletRequest;
-    private final DateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    private final DateFormat dfs = new SimpleDateFormat("yyyyMMdd HH:mm:ss");
     private final String REQUEST_SOURCE = "dqm";
 
     public ImsRuleMetricServiceImpl(@Context HttpServletRequest httpServletRequest) {
@@ -104,6 +102,7 @@ public class ImsRuleMetricServiceImpl implements ImsRuleMetricService {
 
     private Long getTimes(int date) throws UnExpectedRequestException {
         try {
+            DateFormat dfs = new SimpleDateFormat("yyyyMMdd HH:mm:ss");
             dfs.setLenient(false);
             return dfs.parse(date + " 00:00:00").getTime();
         } catch (ParseException e) {
@@ -726,6 +725,7 @@ public class ImsRuleMetricServiceImpl implements ImsRuleMetricService {
     private Long getTimeInMillis(Date time) {
         long times = 0;
         try {
+            DateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
             String timeStr = DateUtils.format(time, DateUtils.ISO8601_DATE_PATTERN);
             Date date = df.parse(timeStr + " 00:00:00");
             Calendar cal = Calendar.getInstance();
