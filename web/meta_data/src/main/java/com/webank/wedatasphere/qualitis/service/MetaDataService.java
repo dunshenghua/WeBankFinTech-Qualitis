@@ -330,7 +330,7 @@ public interface MetaDataService {
      * @return
      * @throws Exception
      */
-    Map<String, Object> getDbsByDataSource(String clusterName, String proxyUser, Long dataSourceId, Long envId) throws Exception;
+    GeneralResponse<GetAllResponse<DbInfoDetail>> getDbsByDataSource(String clusterName, String proxyUser, Long dataSourceId, Long envId) throws Exception;
 
     /**
      * Get table by data source.
@@ -344,7 +344,7 @@ public interface MetaDataService {
      * @throws MetaDataAcquireFailedException
      * @throws Exception
      */
-    Map<String, Object> getTablesByDataSource(String clusterName, String proxyUser, Long dataSourceId, String dbName, Long envId) throws Exception;
+    GeneralResponse<GetAllResponse<TableInfoDetail>> getTablesByDataSource(String clusterName, String proxyUser, Long dataSourceId, String dbName, Long envId) throws Exception;
 
     /**
      * Get column by data source.
