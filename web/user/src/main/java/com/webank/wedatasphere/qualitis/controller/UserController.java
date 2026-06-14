@@ -165,7 +165,7 @@ public class UserController {
         } catch (UnExpectedRequestException e) {
             throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
-            LOGGER.error("Failed to modify password, userId: {}, caused by: {}", HttpUtils.getUserId(httpServletRequest), e.getMessage(), username, e);
+            LOGGER.error("Failed to modify password, userId: {}, caused by: {}, current_user: {}", HttpUtils.getUserId(httpServletRequest), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_MODIFY_PASSWORD}", null);
         }
     }
@@ -178,7 +178,7 @@ public class UserController {
         try {
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_POSITION_ROLE_ENUMN_SUCCESSFULLY}", userService.getPositionRoleEnum());
         } catch (Exception e) {
-            LOGGER.error("Failed to get Scheduled System enumn, caused by system error: {}", e.getMessage(), e);
+            LOGGER.error("Failed to get position role enum, caused by system error: {}", e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_POSITION_ROLE_ENUMN}", null);
         }
     }
@@ -193,7 +193,7 @@ public class UserController {
             return roleService.getProxyUserByUser();
         } catch (Exception e) {
             LOGGER.error("Failed to get proxy user of user: {}, caused by: {}, current_user: {}", username, e.getMessage(), username, e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_PROXY_USER_OF_USER}" + username + ", caused by " + e.getMessage(), null);
+            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_PROXY_USER_OF_USER}", null);
         }
     }
 

@@ -40,9 +40,9 @@ import com.webank.wedatasphere.qualitis.response.RoleResponse;
 import com.webank.wedatasphere.qualitis.response.UserAndRoleResponse;
 import com.webank.wedatasphere.qualitis.rule.constant.RoleSystemTypeEnum;
 import com.webank.wedatasphere.qualitis.service.RoleService;
+import com.webank.wedatasphere.qualitis.util.DateUtils;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.time.FastDateFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,7 +52,6 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.core.Context;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -77,8 +76,6 @@ public class RoleServiceImpl implements RoleService {
 
     @Autowired
     private DepartmentDao departmentDao;
-
-    public static final FastDateFormat PRINT_TIME_FORMAT = FastDateFormat.getInstance("yyyy-MM-dd HH:mm:ss");
 
     private HttpServletRequest httpServletRequest;
     private static final Logger LOGGER = LoggerFactory.getLogger(RoleServiceImpl.class);
@@ -122,7 +119,7 @@ public class RoleServiceImpl implements RoleService {
         }
 
         newRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        newRole.setCreateTime(RoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        newRole.setCreateTime(DateUtils.now());
         Role savedRole = roleDao.saveRole(newRole);
         RoleResponse roleResponse = new RoleResponse(savedRole);
 
@@ -198,7 +195,7 @@ public class RoleServiceImpl implements RoleService {
         //中文名
         roleInDb.setZnName(request.getZnName());
         roleInDb.setModifyUser(HttpUtils.getUserName(httpServletRequest));
-        roleInDb.setModifyTime(RoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        roleInDb.setModifyTime(DateUtils.now());
 
         Role savedRole = roleDao.saveRole(roleInDb);
         LOGGER.info("Succeed to modify role, role_id: {}, role_name: {}, current_user: {}", savedRole.getId(), savedRole.getName(), HttpUtils.getUserName(httpServletRequest));

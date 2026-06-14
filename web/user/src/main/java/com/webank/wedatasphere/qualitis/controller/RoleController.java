@@ -71,7 +71,7 @@ public class RoleController {
     @Path("delete")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse deleteRole(RoleRequest request, @Context HttpServletRequest httpServletRequest) throws UnExpectedRequestException {
+    public GeneralResponse<Object> deleteRole(RoleRequest request, @Context HttpServletRequest httpServletRequest) throws UnExpectedRequestException {
         String username = null;
         try {
             username = HttpUtils.getUserName(httpServletRequest);
@@ -87,7 +87,7 @@ public class RoleController {
     @POST
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse modifyRole(RoleModifyRequest request, @Context HttpServletRequest httpServletRequest) throws UnExpectedRequestException {
+    public GeneralResponse<Object> modifyRole(RoleModifyRequest request, @Context HttpServletRequest httpServletRequest) throws UnExpectedRequestException {
         String username = null;
         try {
             username = HttpUtils.getUserName(httpServletRequest);
@@ -122,11 +122,11 @@ public class RoleController {
     @Path("type/all")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse getRoleTypeEnumn() {
+    public GeneralResponse<Object> getRoleTypeEnum() {
         try {
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_ROLE_TYPE_ENUMN_SUCCESSFULLY}", roleService.getAllRoleTypeEnum());
         } catch (Exception e) {
-            LOGGER.error("Failed to get Scheduled System enumn, caused by system error: {}", e.getMessage(), e);
+            LOGGER.error("Failed to get role type enum, caused by system error: {}", e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_ROLE_TYPE_ENUMN}", e.getMessage());
         }
     }

@@ -50,10 +50,10 @@ import com.webank.wedatasphere.qualitis.response.user.UserResponse;
 import com.webank.wedatasphere.qualitis.service.UserService;
 import com.webank.wedatasphere.qualitis.util.DateUtils;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
+import com.webank.wedatasphere.qualitis.util.ParamChecker;
 import com.webank.wedatasphere.qualitis.util.UuidGenerator;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.time.FastDateFormat;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +66,6 @@ import javax.management.relation.RoleNotFoundException;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.core.Context;
 import java.io.IOException;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -96,8 +95,6 @@ public class UserServiceImpl implements UserService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UserServiceImpl.class);
 
-    public static final FastDateFormat PRINT_TIME_FORMAT = FastDateFormat.getInstance("yyyy-MM-dd HH:mm:ss");
-
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public UserServiceImpl(@Context HttpServletRequest httpServletRequest) {
@@ -117,27 +114,11 @@ public class UserServiceImpl implements UserService {
             throw new UnExpectedRequestException("username: " + username + " {&ALREADY_EXIST}");
         }
 
-        // Generate random password and save user
-        User newUser = new User();
-        String password = RandomPasswordGenerator.generate(16);
-        String passwordEncoded = Sha256Encoder.encode(password);
-        newUser.setUsername(username);
-        newUser.setPassword(passwordEncoded);
-        newUser.setChineseName(request.getChineseName());
-        newUser.setDepartmentName(request.getDepartmentName());
-        newUser.setUserConfigJson(request.getUserConfigJson());
-        newUser.setSubDepartmentCode(Long.valueOf(request.getDepartmentSubCode()));
-        newUser.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        newUser.setCreateTime(DateUtils.now());
-        // Find department by department name
-        Department departmentInDb = departmentDao.findById(request.getDepartmentId());
-        if (null == departmentInDb) {
-            throw new UnExpectedRequestException("Department ID of " + request.getDepartmentId() + " {&DOES_NOT_EXIST}");
-        }
-        newUser.setDepartment(departmentInDb);
-
+        // Build user entity with random password and save
+        String rawPassword = RandomPasswordGenerator.generate(16);
+        User newUser = buildNewUserEntity(request, rawPassword);
         User savedUser = userDao.saveUser(newUser);
-        AddUserResponse addUserResponse = new AddUserResponse(savedUser, password);
+        AddUserResponse addUserResponse = new AddUserResponse(savedUser, rawPassword);
 
         //新用户----->增加普通用户角色
         addNormalRoleForUser(savedUser);
@@ -154,8 +135,8 @@ public class UserServiceImpl implements UserService {
         if (request == null) {
             throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
         }
-        checkString(request.getUsername(), "username");
-        checkString(request.getDepartmentId().toString(), "Department");
+        ParamChecker.checkNotBlank(request.getUsername(), "username");
+        ParamChecker.checkNotBlank(request.getDepartmentId().toString(), "Department");
         // Check existence of user by username
         String username = request.getUsername();
         User userInDb = userDao.findByUsername(username);
@@ -163,25 +144,9 @@ public class UserServiceImpl implements UserService {
             throw new UnExpectedRequestException("username: " + username + " {&ALREADY_EXIST}");
         }
 
-        // Generate random password and save user
-        User newUser = new User();
-        String password = RandomPasswordGenerator.generate(16);
-        String passwordEncoded = Sha256Encoder.encode(password);
-        newUser.setUsername(username);
-        newUser.setPassword(passwordEncoded);
-        newUser.setChineseName(request.getChineseName());
-        newUser.setDepartmentName(request.getDepartmentName());
-        newUser.setUserConfigJson(request.getUserConfigJson());
-        newUser.setSubDepartmentCode(Long.valueOf(request.getDepartmentSubCode()));
-        newUser.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        newUser.setCreateTime(DateUtils.now());
-        // Find department by department name
-        Department departmentInDb = departmentDao.findById(request.getDepartmentId());
-        if (null == departmentInDb) {
-            throw new UnExpectedRequestException("Department ID of " + request.getDepartmentId() + " {&DOES_NOT_EXIST}");
-        }
-        newUser.setDepartment(departmentInDb);
-
+        // Build user entity with random password and save
+        String rawPassword = RandomPasswordGenerator.generate(16);
+        User newUser = buildNewUserEntity(request, rawPassword);
         User savedUser = userDao.saveUser(newUser);
 
         //新用户----->增加普通用户角色
@@ -194,6 +159,34 @@ public class UserServiceImpl implements UserService {
         return savedUser;
     }
 
+    /**
+     * Builds a new User entity from the add-user request.
+     * Shared by addUser() and addItsmUser() to eliminate duplicate construction logic.
+     *
+     * @param request     the add-user request containing user details
+     * @param rawPassword the plaintext password (will be SHA-256 encoded before storing)
+     * @return a fully populated (but unsaved) User entity
+     */
+    private User buildNewUserEntity(UserAddRequest request, String rawPassword) throws UnExpectedRequestException {
+        User newUser = new User();
+        String passwordEncoded = Sha256Encoder.encode(rawPassword);
+        newUser.setUsername(request.getUsername());
+        newUser.setPassword(passwordEncoded);
+        newUser.setChineseName(request.getChineseName());
+        newUser.setDepartmentName(request.getDepartmentName());
+        newUser.setUserConfigJson(request.getUserConfigJson());
+        newUser.setSubDepartmentCode(Long.valueOf(request.getDepartmentSubCode()));
+        newUser.setCreateUser(HttpUtils.getUserName(httpServletRequest));
+        newUser.setCreateTime(DateUtils.now());
+        // Find department by department id
+        Department departmentInDb = departmentDao.findById(request.getDepartmentId());
+        if (null == departmentInDb) {
+            throw new UnExpectedRequestException("Department ID of " + request.getDepartmentId() + " {&DOES_NOT_EXIST}");
+        }
+        newUser.setDepartment(departmentInDb);
+        return newUser;
+    }
+
     public void checkPositionRole(User savedUser, String englishName, String chineseName, Boolean ifModify) throws UnExpectedRequestException {
         Role role = roleDao.findByRoleNameAndType(englishName, RoleTypeEnum.POSITION_ROLE.getCode());
         if (role == null) {
@@ -202,7 +195,7 @@ public class UserServiceImpl implements UserService {
             newRole.setZnName(chineseName);
             newRole.setName(englishName);
             newRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-            newRole.setCreateTime(UserServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+            newRole.setCreateTime(DateUtils.now());
             Role savedRole = roleDao.saveRole(newRole);
             LOGGER.info("Succeed to add role, role: {}, current_user: {}", savedRole, HttpUtils.getUserName(httpServletRequest));
             addUserRole(savedRole, savedUser, ifModify);
@@ -221,7 +214,7 @@ public class UserServiceImpl implements UserService {
                 userRole.setRole(role);
                 userRole.setUser(savedUser);
                 userRole.setModifyUser(HttpUtils.getUserName(httpServletRequest));
-                userRole.setModifyTime(UserRoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+                userRole.setModifyTime(DateUtils.now());
                 UserRole lastUserRole = userRoleDao.saveUserRole(userRole);
                 LOGGER.info("Succeed to modify user role,user role: {}, current_user: {}", lastUserRole, HttpUtils.getUserName(httpServletRequest));
             } else {
@@ -240,7 +233,7 @@ public class UserServiceImpl implements UserService {
         newUserRole.setId(UuidGenerator.generate());
 
         newUserRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        newUserRole.setCreateTime(UserRoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        newUserRole.setCreateTime(DateUtils.now());
         UserRole savedUserRole = userRoleDao.saveUserRole(newUserRole);
         LOGGER.info("Succeed to add user role,user role: {}, current_user: {}", savedUserRole, HttpUtils.getUserName(httpServletRequest));
     }
@@ -397,15 +390,19 @@ public class UserServiceImpl implements UserService {
     @Override
     public GeneralResponse getUserPermission() {
         List<User> users = userDao.findAll();
-        List<UserPermissionResponse> userPermissionResponses = Lists.newArrayList();
+        // Batch-load all user roles in a single query (fixes N+1)
+        List<UserRole> allUserRoles = userRoleDao.findAll();
+        Map<Long, List<UserRole>> userRolesByUserId = allUserRoles.stream()
+                .collect(Collectors.groupingBy(ur -> ur.getUser().getId()));
 
+        List<UserPermissionResponse> userPermissionResponses = Lists.newArrayList();
         for (User user : users) {
             UserPermissionResponse userPermissionResponse = new UserPermissionResponse();
             userPermissionResponse.setUserId(user.getUsername());
             userPermissionResponse.setUserName(user.getChineseName());
 
             List<UserRolesResponse> userRolesResponses = Lists.newArrayList();
-            List<UserRole> userRoles = userRoleDao.findByUserId(user);
+            List<UserRole> userRoles = userRolesByUserId.getOrDefault(user.getId(), Lists.newArrayList());
             for (UserRole userRole : userRoles) {
                 userRolesResponses.add(new UserRolesResponse(userRole));
             }
@@ -471,18 +468,20 @@ public class UserServiceImpl implements UserService {
         userRole.setRole(role);
         userRole.setUser(savedUser);
         userRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        userRole.setCreateTime(LoginServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        userRole.setCreateTime(DateUtils.now());
         userRoleDao.saveUserRole(userRole);
         LOGGER.info("Succeed to save user_role. uuid: {}, user_id: {}, role_id: {}", userRole.getId(), savedUser.getId(), role.getId());
 
     }
 
+    // -- Validation helpers (using ParamChecker for common checks) --
+
     private void checkRequest(ModifyPasswordRequest request) throws UnExpectedRequestException {
         if (request == null) {
             throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
         }
-        checkString(request.getOldPassword(), "old password");
-        checkString(request.getNewPassword(), "new password");
+        ParamChecker.checkNotBlank(request.getOldPassword(), "old password");
+        ParamChecker.checkNotBlank(request.getNewPassword(), "new password");
     }
 
     private void checkRequest(ModifyDepartmentRequest request) throws UnExpectedRequestException {
@@ -492,8 +491,8 @@ public class UserServiceImpl implements UserService {
         if (request.getUserId() == null) {
             throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
         }
-        checkString(request.getUserId().toString(), "user ID");
-        checkString(request.getDepartmentName(), "department role id");
+        ParamChecker.checkNotBlank(request.getUserId().toString(), "user ID");
+        ParamChecker.checkNotBlank(request.getDepartmentName(), "department role id");
         if (StringUtils.isNotBlank(request.getUserConfigJson())) {
             try {
                 new ObjectMapper().readValue(request.getUserConfigJson(), Map.class);
@@ -503,34 +502,21 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    private void checkId(Long id, String idName) throws UnExpectedRequestException {
-        if (null == id) {
-            throw new UnExpectedRequestException(idName + " {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-    }
-
-    private void checkString(String str, String strName) throws UnExpectedRequestException {
-        if (StringUtils.isBlank(str)) {
-            throw new UnExpectedRequestException(strName + " {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-    }
-
-
     private void checkRequest(UserRequest request) throws UnExpectedRequestException {
         if (request == null) {
             throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
         }
-        checkId(request.getUserId(), "id");
+        ParamChecker.checkId(request.getUserId(), "id");
     }
 
     private void checkRequest(UserAddRequest request) throws UnExpectedRequestException {
         if (request == null) {
             throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
         }
-        checkString(request.getUsername(), "username");
-        checkString(request.getDepartmentId().toString(), "Department");
-        checkString(request.getPositionEn(), "PositionEn");
-        checkString(request.getPositionZh(), "PositionZh");
+        ParamChecker.checkNotBlank(request.getUsername(), "username");
+        ParamChecker.checkNotBlank(request.getDepartmentId().toString(), "Department");
+        ParamChecker.checkNotBlank(request.getPositionEn(), "PositionEn");
+        ParamChecker.checkNotBlank(request.getPositionZh(), "PositionZh");
         if (StringUtils.isNotBlank(request.getUserConfigJson())) {
             try {
                 objectMapper.readValue(request.getUserConfigJson(), Map.class);

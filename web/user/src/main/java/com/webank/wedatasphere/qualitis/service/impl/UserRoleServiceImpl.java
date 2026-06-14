@@ -44,12 +44,12 @@ import com.webank.wedatasphere.qualitis.response.GetAllResponse;
 import com.webank.wedatasphere.qualitis.response.UserRoleResponse;
 import com.webank.wedatasphere.qualitis.rule.constant.RoleSystemTypeEnum;
 import com.webank.wedatasphere.qualitis.service.UserRoleService;
+import com.webank.wedatasphere.qualitis.util.DateUtils;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
-import com.webank.wedatasphere.qualitis.util.SpringContextHolder;
+import com.webank.wedatasphere.qualitis.util.ParamChecker;
 import com.webank.wedatasphere.qualitis.util.UuidGenerator;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.time.FastDateFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,7 +59,6 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.core.Context;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -82,7 +81,8 @@ public class UserRoleServiceImpl implements UserRoleService {
     @Autowired
     private ProjectUserDao projectUserDao;
 
-    public static final FastDateFormat PRINT_TIME_FORMAT = FastDateFormat.getInstance("yyyy-MM-dd HH:mm:ss");
+    @Autowired
+    private ProjectDao projectDao;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UserRoleServiceImpl.class);
     private HttpServletRequest httpServletRequest;
@@ -127,7 +127,7 @@ public class UserRoleServiceImpl implements UserRoleService {
         newUserRole.setUser(userInDb);
         newUserRole.setId(UuidGenerator.generate());
         newUserRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        newUserRole.setCreateTime(UserRoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        newUserRole.setCreateTime(DateUtils.now());
 
         UserRole savedUserRole = userRoleDao.saveUserRole(newUserRole);
         UserRoleResponse response = new UserRoleResponse(savedUserRole);
@@ -191,7 +191,7 @@ public class UserRoleServiceImpl implements UserRoleService {
         userRoleInDb.setUser(userInDb);
         userRoleInDb.setRole(roleInDb);
         userRoleInDb.setModifyUser(HttpUtils.getUserName(httpServletRequest));
-        userRoleInDb.setModifyTime(UserRoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        userRoleInDb.setModifyTime(DateUtils.now());
         UserRole savedUserRole = userRoleDao.saveUserRole(userRoleInDb);
 
         addProjectPermission(roleId, userInDb);
@@ -226,52 +226,39 @@ public class UserRoleServiceImpl implements UserRoleService {
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&FIND_ALL_USER_ROLES_SUCCESSFULLY}", responses);
     }
 
+    // -- Validation helpers (using ParamChecker for common checks) --
+
     private void checkRequest(ModifyUserRoleRequest request) throws UnExpectedRequestException {
         if (request == null) {
             throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
         }
-        checkUuid(request.getUuid());
-        checkId(request.getUserId(), "userId");
-        checkId(request.getRoleId(), "roleId");
+        ParamChecker.checkNotBlank(request.getUuid(), "uuid");
+        ParamChecker.checkId(request.getUserId(), "userId");
+        ParamChecker.checkId(request.getRoleId(), "roleId");
     }
 
     private void checkRequest(DeleteUserRoleRequest request) throws UnExpectedRequestException {
         if (request == null) {
             throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
         }
-        checkUuid(request.getUuid());
-    }
-
-    private void checkUuid(String uuid) throws UnExpectedRequestException {
-        if (StringUtils.isBlank(uuid)) {
-            throw new UnExpectedRequestException("uuid {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
+        ParamChecker.checkNotBlank(request.getUuid(), "uuid");
     }
 
     private void checkRequest(AddUserRoleRequest request) throws UnExpectedRequestException {
         if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}l");
+            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
         }
-        checkId(request.getUserId(), "userId");
-        checkId(request.getRoleId(), "roleId");
-    }
-
-    private void checkId(Long id, String idName) throws UnExpectedRequestException {
-        if (id == null) {
-            throw new UnExpectedRequestException(idName + " {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
+        ParamChecker.checkId(request.getUserId(), "userId");
+        ParamChecker.checkId(request.getRoleId(), "roleId");
     }
 
     /**
      * 授权管理员时->所有项目授权
+     * 当系统管理员+部门管理的人员发生变动时，需移除所有依赖了该人员的项目权限
      *
      * @param userRoleInDb 用户角色(改动的)
      */
     public void checkExistRoles(UserRole userRoleInDb) throws InterruptedException {
-        //当系统管理员+部门管理的人员发生变动时，需移除所有依赖了该人员的项目权限，移除权限依赖(用户创建项目时自动赋权的用户)
-        //用户角色管理  页面表单-> a.用户名;  b.角色名;
-        //管理员、部门管理员角色授权和取消授权，对应有项目权限的变动
-
         //1.判断当前用户角色是否部门管理员
         boolean deptAdmin = userRoleInDb.getRole().getName().endsWith(RoleSystemTypeEnum.DEPARTMENT_ADMIN.getMessage());
 
@@ -279,10 +266,8 @@ public class UserRoleServiceImpl implements UserRoleService {
         Role role = roleDao.findByRoleName(QualitisConstants.ADMIN);
         //3.修改或删除操作(条件判断): 不是部门管理员或系统管理员
         if (deptAdmin || (userRoleInDb.getRole().getId() + "").equals(role.getId() + "")) {
-            //4.删除该用户项目权限----->日志输出 log.info()    批量删除   ------>先批量删除 查看删除效率，再考虑用异步实现
-            //4->a.查询ProjectUser表, 匹配的用户名、标识switch为自动的List<ProjectUser>
-            // ->b.批量删除项目权限
-            List<ProjectUser> projectUserList = SpringContextHolder.getBean(ProjectUserDao.class).findUserNameAndAutomatic(userRoleInDb.getUser().getUsername(), SwitchTypeEnum.AUTO_MATIC.getCode());
+            //4.删除该用户项目权限
+            List<ProjectUser> projectUserList = projectUserDao.findUserNameAndAutomatic(userRoleInDb.getUser().getUsername(), SwitchTypeEnum.AUTO_MATIC.getCode());
             if (CollectionUtils.isNotEmpty(projectUserList)) {
                 LOGGER.info(" >>>>>>>>>>find matching data to ProjectUser: <<<<<<<<<<" + projectUserList);
                 handleBatchObject(projectUserList, false);
@@ -306,7 +291,7 @@ public class UserRoleServiceImpl implements UserRoleService {
             return;
         }
 
-        List<Project> projectList = SpringContextHolder.getBean(ProjectDao.class).findAll();
+        List<Project> projectList = projectDao.findAll();
         if (CollectionUtils.isEmpty(projectList)) {
             return;
         }

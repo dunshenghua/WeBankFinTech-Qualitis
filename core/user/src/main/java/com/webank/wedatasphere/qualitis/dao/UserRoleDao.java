@@ -115,4 +115,10 @@ public interface UserRoleDao {
      * @return
      */
     List<UserRole> findByUserId(User user);
+
+    /**
+     * Find all user roles
+     * @return list of all UserRole entities
+     */
+    List<UserRole> findAll();
 }

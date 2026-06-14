@@ -100,4 +100,9 @@ public class UserRoleDaoImpl implements UserRoleDao {
         return userRoleRepository.findByUserId(user.getId());
     }
 
+    @Override
+    public List<UserRole> findAll() {
+        return userRoleRepository.findAll();
+    }
+
 }
