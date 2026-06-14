@@ -44,6 +44,7 @@ import javax.ws.rs.core.MediaType;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 /**
  * @author howeye
@@ -88,25 +89,9 @@ public class ProjectBatchController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse uploadProjects(UploadProjectRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
-        List<Project> projectLists= Lists.newArrayList();
-        try {
-            if (null != request.getProjectId()) {
-                projectLists = projectBatchService.checkProjects(Arrays.asList(request.getProjectId()));
-            }
-            return projectBatchService.uploadProjectFromLocalOrGit(request, false);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error("Failed to upload projects, caused by system error: {}", e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        }
+        List<Long> projectIds = null != request.getProjectId() ? Arrays.asList(request.getProjectId()) : null;
+        return executeBatchWithRecovery(projectIds, "upload projects",
+            () -> projectBatchService.uploadProjectFromLocalOrGit(request, false));
     }
 
     @POST
@@ -114,20 +99,8 @@ public class ProjectBatchController {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public GeneralResponse downloadProject(DownloadProjectRequest downloadProjectRequest, @Context HttpServletResponse response)
-        throws UnExpectedRequestException {
-        List<Project> projectLists= Lists.newArrayList();
-        try {
-            projectLists = projectBatchService.checkProjects(downloadProjectRequest.getProjectId());
-            return projectBatchService.downloadProjectsToLocalOrGit(downloadProjectRequest, response);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error("Failed to download projects and rules, caused by system error: {}", e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_DOWNLOAD_PROJECTS_AND_RULES}", null);
-        }
+        throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return doDownload(downloadProjectRequest, response);
     }
 
     @POST
@@ -136,23 +109,7 @@ public class ProjectBatchController {
     @Produces(MediaType.APPLICATION_JSON)
     public GeneralResponse downloadProjectToGit(DownloadProjectRequest downloadProjectRequest, @Context HttpServletResponse response)
         throws UnExpectedRequestException, PermissionDeniedRequestException {
-        List<Project> projectLists= Lists.newArrayList();
-        try {
-            projectLists = projectBatchService.checkProjects(downloadProjectRequest.getProjectId());
-            return projectBatchService.downloadProjectsToLocalOrGit(downloadProjectRequest, response);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error("Failed to download projects and rules, caused by system error: {}", e.getMessage(), e);
-            projectService.batchSaveAndFlushProject(projectLists);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_DOWNLOAD_PROJECTS_AND_RULES}", null);
-        }
+        return doDownload(downloadProjectRequest, response);
     }
 
     @GET
@@ -164,6 +121,47 @@ public class ProjectBatchController {
         } catch (Exception e) {
             LOGGER.error("Failed to list diff variables, caused by system error: {}", e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed to list diff variables", null);
+        }
+    }
+
+    /**
+     * Common download logic for both downloadProject and downloadProjectToGit.
+     */
+    private GeneralResponse doDownload(DownloadProjectRequest request, HttpServletResponse response)
+        throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return executeBatchWithRecovery(request.getProjectId(), "download projects and rules",
+            () -> projectBatchService.downloadProjectsToLocalOrGit(request, response));
+    }
+
+    /**
+     * Execute a batch operation with project state recovery on failure.
+     * If the operation fails, attempts to restore all checked projects to operable status.
+     *
+     * @param projectIds project IDs to validate before execution (nullable)
+     * @param operationDesc description of the operation for logging
+     * @param operation the batch operation to execute
+     * @return GeneralResponse from the operation
+     */
+    private GeneralResponse executeBatchWithRecovery(List<Long> projectIds, String operationDesc,
+            Callable<GeneralResponse> operation) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        List<Project> projectLists = Lists.newArrayList();
+        try {
+            if (projectIds != null) {
+                projectLists = projectBatchService.checkProjects(projectIds);
+            }
+            return operation.call();
+        } catch (UnExpectedRequestException e) {
+            LOGGER.error(e.getMessage(), e);
+            projectService.batchSaveAndFlushProject(projectLists);
+            throw e;
+        } catch (PermissionDeniedRequestException e) {
+            LOGGER.error(e.getMessage(), e);
+            projectService.batchSaveAndFlushProject(projectLists);
+            throw e;
+        } catch (Exception e) {
+            LOGGER.error("Failed to {}, caused by system error: {}", operationDesc, e.getMessage(), e);
+            projectService.batchSaveAndFlushProject(projectLists);
+            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
         }
     }
 }
