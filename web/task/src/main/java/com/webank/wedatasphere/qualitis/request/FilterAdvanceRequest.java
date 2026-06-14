@@ -25,7 +25,7 @@ import java.util.List;
 /**
  * @author allenzhou
  */
-public class FilterAdvanceRequest {
+public class FilterAdvanceRequest extends AbstractPageRequest {
     @JsonProperty("application_id")
     private String applicationId;
     @JsonProperty("project_id")
@@ -57,17 +57,13 @@ public class FilterAdvanceRequest {
     @JsonProperty("end_finish_time")
     private String endFinishTime;
 
-    private Integer page;
-    private Integer size;
-
     public FilterAdvanceRequest() {
-        // Do nothing.
+        super();
     }
 
     public static void checkRequest(FilterAdvanceRequest request) throws UnExpectedRequestException {
         CommonChecker.checkObject(request, "Advance filter request.");
-        CommonChecker.checkObject(request.getPage(), "page");
-        CommonChecker.checkObject(request.getSize(), "size");
+        request.validatePagination();
     }
 
     public String getStartFinishTime() {
@@ -164,22 +160,6 @@ public class FilterAdvanceRequest {
 
     public void setEndTime(String endTime) {
         this.endTime = endTime;
-    }
-
-    public Integer getPage() {
-        return page;
-    }
-
-    public void setPage(Integer page) {
-        this.page = page;
-    }
-
-    public Integer getSize() {
-        return size;
-    }
-
-    public void setSize(Integer size) {
-        this.size = size;
     }
 
     public String getExecuteUser() {

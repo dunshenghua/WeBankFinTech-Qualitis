@@ -17,22 +17,17 @@
 package com.webank.wedatasphere.qualitis.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.collect.Maps;
 import com.webank.wedatasphere.qualitis.constant.SpecCharEnum;
 import com.webank.wedatasphere.qualitis.constants.QualitisConstants;
-import com.webank.wedatasphere.qualitis.dao.ApplicationCommentDao;
 import com.webank.wedatasphere.qualitis.entity.Application;
-import com.webank.wedatasphere.qualitis.entity.ApplicationComment;
 import com.webank.wedatasphere.qualitis.entity.Task;
 import com.webank.wedatasphere.qualitis.entity.TaskRuleSimple;
-import com.webank.wedatasphere.qualitis.util.SpringContextHolder;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.logging.log4j.util.Strings;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * @author howeye
@@ -104,6 +99,9 @@ public class ApplicationResponse {
     @JsonProperty("error_count")
     private Integer errorCount;
 
+    public ApplicationResponse() {
+    }
+
     public ApplicationResponse(Application application, List<Task> tasks) {
         this.applicationId = application.getId();
         this.ruleSize = application.getRuleSize();
@@ -145,13 +143,8 @@ public class ApplicationResponse {
         this.fpsFileId = application.getFpsFileId();
         this.fpsHashValue = application.getFpsHashValue();
 
-        if (application.getApplicationComment() != null) {
-            ApplicationComment applicationComment = SpringContextHolder.getBean(ApplicationCommentDao.class).getByCode(application.getApplicationComment());
-            if (applicationComment != null) {
-                this.zhMessage = applicationComment.getZhMessage();
-                this.enMessage = applicationComment.getEnMessage();
-            }
-        }
+        // Note: zhMessage/enMessage are now set by ApplicationResponseAssembler
+        // after construction, removing the previous SpringContextHolder.getBean() anti-pattern.
 
         if (null == this.scheduleProjectName) {
             this.scheduleProjectName = Strings.EMPTY;

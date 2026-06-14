@@ -18,12 +18,11 @@ package com.webank.wedatasphere.qualitis.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
-import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
 
 /**
  * @author howeye
  */
-public class FilterDataSourceRequest {
+public class FilterDataSourceRequest extends AbstractPageRequest {
 
     @JsonProperty("cluster_name")
     private String clusterName;
@@ -31,12 +30,9 @@ public class FilterDataSourceRequest {
     private String databaseName;
     @JsonProperty("table_name")
     private String tableName;
-    private Integer page;
-    private Integer size;
 
     public FilterDataSourceRequest() {
-        this.page = 0;
-        this.size = 5;
+        super();
     }
 
     public String getClusterName() {
@@ -63,23 +59,7 @@ public class FilterDataSourceRequest {
         this.tableName = tableName;
     }
 
-    public Integer getPage() {
-        return page;
-    }
-
-    public void setPage(Integer page) {
-        this.page = page;
-    }
-
-    public Integer getSize() {
-        return size;
-    }
-
-    public void setSize(Integer size) {
-        this.size = size;
-    }
-
     public static void checkRequest(FilterDataSourceRequest request) throws UnExpectedRequestException {
-        // Check arguments
+        request.validatePagination();
     }
 }

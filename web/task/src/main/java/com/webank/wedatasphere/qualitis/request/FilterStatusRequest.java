@@ -23,17 +23,14 @@ import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
 /**
  * @author howeye
  */
-public class FilterStatusRequest {
+public class FilterStatusRequest extends AbstractPageRequest {
 
     private Integer status;
     @JsonProperty("comment_type")
     private Integer commentType;
-    private Integer page;
-    private Integer size;
 
     public FilterStatusRequest() {
-        this.page = 0;
-        this.size = 5;
+        super();
     }
 
     public Integer getStatus() {
@@ -52,23 +49,8 @@ public class FilterStatusRequest {
         this.commentType = commentType;
     }
 
-    public Integer getPage() {
-        return page;
-    }
-
-    public void setPage(Integer page) {
-        this.page = page;
-    }
-
-    public Integer getSize() {
-        return size;
-    }
-
-    public void setSize(Integer size) {
-        this.size = size;
-    }
-
     public static void checkRequest(FilterStatusRequest request) throws UnExpectedRequestException {
+        request.validatePagination();
         if (request.getStatus() != null) {
             if (request.getStatus().intValue() == 0) {
                 return;

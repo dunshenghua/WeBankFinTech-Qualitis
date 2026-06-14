@@ -30,7 +30,6 @@ import com.webank.wedatasphere.qualitis.response.ApplicationResponse;
 import com.webank.wedatasphere.qualitis.response.GeneralResponse;
 import com.webank.wedatasphere.qualitis.response.GetAllResponse;
 import com.webank.wedatasphere.qualitis.service.ApplicationService;
-import org.datanucleus.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -156,15 +155,6 @@ public class ApplicationController {
     public GeneralResponse<GetAllResponse<ApplicationResponse>> filterAdvanceApplication(FilterAdvanceRequest request) throws UnExpectedRequestException {
         FilterAdvanceRequest.checkRequest(request);
 
-        if (StringUtils.isEmpty(request.getStartTime())) {
-            request.setStartTime("2019-01-01 00:00:00");
-        }
-        if (StringUtils.isEmpty(request.getEndTime())) {
-            request.setEndTime("2099-01-01 23:59:59");
-        }
-        if (!StringUtils.isEmpty(request.getApplicationId())) {
-            request.setApplicationId("%" + request.getApplicationId() + "%");
-        }
         try {
             return applicationService.filterAdvanceApplication(request);
         } catch (Exception e) {

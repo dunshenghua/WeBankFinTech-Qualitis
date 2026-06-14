@@ -74,57 +74,24 @@ public class TaskServiceImpl implements TaskService {
         }
         taskInDb.setTaskRuleSimples(taskRuleSimples);
 
-        // Find single table verification rules
-        List<TaskRuleSimple> singleRuleIds = taskInDb.getTaskRuleSimples().stream().filter(taskRuleSimple ->
-                taskRuleSimple.getRuleType().equals(RuleTypeEnum.SINGLE_TEMPLATE_RULE.getCode())).collect(Collectors.toList());
-        // Find all datasources of single table verification rules, and save it in the map
-        Map<TaskRuleSimple, List<TaskDataSource>> singleRuleDataSourceMap = new HashMap<>(singleRuleIds.size());
-        for (TaskRuleSimple taskRuleSimple : singleRuleIds) {
-            singleRuleDataSourceMap.put(taskRuleSimple, taskDataSourceDao.findByTaskAndRuleId(taskInDb, taskRuleSimple.getRuleId()));
-        }
+        // Group rules by type and build datasource maps for each type
+        Map<Integer, List<TaskRuleSimple>> rulesByType = taskInDb.getTaskRuleSimples().stream()
+                .collect(Collectors.groupingBy(TaskRuleSimple::getRuleType));
 
-        // Find custom table verification rules
-        List<TaskRuleSimple> customRuleIds = taskInDb.getTaskRuleSimples().stream().filter(taskRuleSimple ->
-            taskRuleSimple.getRuleType().equals(RuleTypeEnum.CUSTOM_RULE.getCode())).collect(Collectors.toList());
-        // Find all datasources of custom table verification rules, and save it in the map
-        Map<TaskRuleSimple, List<TaskDataSource>> customRuleDataSourceMap = new HashMap<>(customRuleIds.size());
-        for (TaskRuleSimple taskRuleSimple : customRuleIds) {
-            customRuleDataSourceMap.put(taskRuleSimple, taskDataSourceDao.findByTaskAndRuleId(taskInDb, taskRuleSimple.getRuleId()));
-        }
+        Map<TaskRuleSimple, List<TaskDataSource>> singleRuleDataSourceMap =
+                buildRuleDataSourceMap(taskInDb, rulesByType.getOrDefault(RuleTypeEnum.SINGLE_TEMPLATE_RULE.getCode(), Collections.emptyList()));
+        Map<TaskRuleSimple, List<TaskDataSource>> customRuleDataSourceMap =
+                buildRuleDataSourceMap(taskInDb, rulesByType.getOrDefault(RuleTypeEnum.CUSTOM_RULE.getCode(), Collections.emptyList()));
+        Map<TaskRuleSimple, List<TaskDataSource>> multiRuleDataSourceMap =
+                buildRuleDataSourceMap(taskInDb, rulesByType.getOrDefault(RuleTypeEnum.MULTI_TEMPLATE_RULE.getCode(), Collections.emptyList()));
+        Map<TaskRuleSimple, List<TaskDataSource>> fileRuleDataSourceMap =
+                buildRuleDataSourceMap(taskInDb, rulesByType.getOrDefault(RuleTypeEnum.FILE_TEMPLATE_RULE.getCode(), Collections.emptyList()));
 
-        // Find multi-table verification rules
-        List<TaskRuleSimple> multiRuleIds = taskInDb.getTaskRuleSimples().stream().filter(taskRuleSimple ->
-                taskRuleSimple.getRuleType().equals(RuleTypeEnum.MULTI_TEMPLATE_RULE.getCode())).collect(Collectors.toList());
-        // Find all datasources of multi-table verification rules, and save it in the map
-        Map<TaskRuleSimple, List<TaskDataSource>> multiRuleDataSourceMap = new HashMap<>(multiRuleIds.size());
-        for (TaskRuleSimple taskRuleSimple : multiRuleIds) {
-            multiRuleDataSourceMap.put(taskRuleSimple, taskDataSourceDao.findByTaskAndRuleId(taskInDb, taskRuleSimple.getRuleId()));
-        }
-
-        // Find file table verification rules
-        List<TaskRuleSimple> fileRuleIds = taskInDb.getTaskRuleSimples().stream().filter(taskRuleSimple ->
-            taskRuleSimple.getRuleType().equals(RuleTypeEnum.FILE_TEMPLATE_RULE.getCode())).collect(Collectors.toList());
-        // Find all datasources of file table verification rules, and save it in the map
-        Map<TaskRuleSimple, List<TaskDataSource>> fileRuleDataSourceMap = new HashMap<>(fileRuleIds.size());
-        for (TaskRuleSimple taskRuleSimple : fileRuleIds) {
-            fileRuleDataSourceMap.put(taskRuleSimple, taskDataSourceDao.findByTaskAndRuleId(taskInDb, taskRuleSimple.getRuleId()));
-        }
-
-        List<Long> allRuleIds = new ArrayList<>();
-        for (TaskRuleSimple taskRuleSimple : taskInDb.getTaskRuleSimples()) {
-            allRuleIds.add(taskRuleSimple.getRuleId());
-        }
+        List<Long> allRuleIds = taskInDb.getTaskRuleSimples().stream()
+                .map(TaskRuleSimple::getRuleId).collect(Collectors.toList());
         List<TaskResult> allTaskResult = taskResultDao.findByApplicationIdAndRuleIn(taskInDb.getApplication().getId(), allRuleIds);
-        Map<Long, List<TaskResult>> allResultMap = new HashMap<>(allTaskResult.size());
-        for (TaskResult taskResult : allTaskResult) {
-            if (allResultMap.get(taskResult.getRuleId()) != null) {
-                allResultMap.get(taskResult.getRuleId()).add(taskResult);
-            } else {
-                List<TaskResult> taskResults = new ArrayList<>(1);
-                taskResults.add(taskResult);
-                allResultMap.put(taskResult.getRuleId(), taskResults);
-            }
-        }
+        Map<Long, List<TaskResult>> allResultMap = allTaskResult.stream()
+                .collect(Collectors.groupingBy(TaskResult::getRuleId));
 
         TaskCheckResultResponse taskCheckResultResponse = new TaskCheckResultResponse(taskInDb, singleRuleDataSourceMap, customRuleDataSourceMap
             , multiRuleDataSourceMap, fileRuleDataSourceMap, allResultMap);
@@ -141,5 +108,18 @@ public class TaskServiceImpl implements TaskService {
         executingStatusList.add(TaskStatusEnum.INITED.getCode());
         executingStatusList.add(TaskStatusEnum.RUNNING.getCode());
         return taskDao.countExecutingTaskNumber(startBeginTime, endBeginTime, executingStatusList);
+    }
+
+    /**
+     * Build a map from TaskRuleSimple to its associated TaskDataSource list.
+     * Consolidates the previously duplicated loop pattern for each rule type.
+     */
+    private Map<TaskRuleSimple, List<TaskDataSource>> buildRuleDataSourceMap(
+            Task task, List<TaskRuleSimple> rules) {
+        Map<TaskRuleSimple, List<TaskDataSource>> map = new HashMap<>(rules.size());
+        for (TaskRuleSimple rule : rules) {
+            map.put(rule, taskDataSourceDao.findByTaskAndRuleId(task, rule.getRuleId()));
+        }
+        return map;
     }
 }

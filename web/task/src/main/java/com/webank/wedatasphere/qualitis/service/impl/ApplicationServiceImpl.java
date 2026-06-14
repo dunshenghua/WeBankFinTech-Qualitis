@@ -24,10 +24,10 @@ import com.webank.wedatasphere.qualitis.client.RequestLinkis;
 import com.webank.wedatasphere.qualitis.client.request.AskLinkisParameter;
 import com.webank.wedatasphere.qualitis.config.LinkisConfig;
 import com.webank.wedatasphere.qualitis.constant.AlarmConfigStatusEnum;
-import com.webank.wedatasphere.qualitis.constant.ApplicationStatusEnum;
 import com.webank.wedatasphere.qualitis.constant.InvokeTypeEnum;
-import com.webank.wedatasphere.qualitis.constant.TaskStatusEnum;
+import com.webank.wedatasphere.qualitis.constant.StatusMapping;
 import com.webank.wedatasphere.qualitis.constants.ResponseStatusConstants;
+import com.webank.wedatasphere.qualitis.converter.ApplicationResponseAssembler;
 import com.webank.wedatasphere.qualitis.dao.ApplicationCommentDao;
 import com.webank.wedatasphere.qualitis.dao.ApplicationDao;
 import com.webank.wedatasphere.qualitis.dao.ClusterInfoDao;
@@ -71,6 +71,7 @@ import com.webank.wedatasphere.qualitis.rule.constant.CompareTypeEnum;
 import com.webank.wedatasphere.qualitis.service.ApplicationService;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
 import com.webank.wedatasphere.qualitis.util.SpringContextHolder;
+import com.webank.wedatasphere.qualitis.util.UserContextHelper;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.HttpStatus;
@@ -145,31 +146,18 @@ public class ApplicationServiceImpl implements ApplicationService {
     @Autowired
     private RequestLinkis requestLinkis;
 
+    @Autowired
+    private ApplicationResponseAssembler applicationResponseAssembler;
+
+    @Autowired
+    private UserContextHelper userContextHelper;
+
 //    @Autowired
 //    private ScheduledTaskDao scheduledTaskDao;
 
     private HttpServletRequest httpServletRequest;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApplicationServiceImpl.class);
-
-    private static final Map<Integer, Integer> COMMENT_STATUS = new HashMap<Integer, Integer>();
-
-    static {
-        COMMENT_STATUS.put(1, 9);
-        COMMENT_STATUS.put(2, 7);
-        COMMENT_STATUS.put(3, 7);
-        COMMENT_STATUS.put(4, 7);
-        COMMENT_STATUS.put(5, 7);
-        COMMENT_STATUS.put(6, 7);
-        COMMENT_STATUS.put(7, 8);
-        COMMENT_STATUS.put(8, 8);
-        COMMENT_STATUS.put(9, 4);
-        COMMENT_STATUS.put(10, 4);
-        COMMENT_STATUS.put(11, 9);
-        COMMENT_STATUS.put(12, 7);
-        COMMENT_STATUS.put(13, 8);
-        COMMENT_STATUS.put(14, 9);
-    }
 
     public ApplicationServiceImpl(@Context HttpServletRequest request) {
         this.httpServletRequest = request;
@@ -187,13 +175,14 @@ public class ApplicationServiceImpl implements ApplicationService {
         }
 
         if (request.getCommentType() != null) {
-            request.setStatus(COMMENT_STATUS.get(request.getCommentType()));
+            request.setStatus(StatusMapping.commentTypeToApplicationStatus(request.getCommentType()));
         }
 
-        List<Application> applicationList;
-        Long total;
         Integer page = request.getPage();
         Integer size = request.getSize();
+
+        List<Application> applicationList;
+        long total;
         if (request.getStatus() == null || request.getStatus().intValue() == 0) {
             // Paging find applications by user
             long currentTimeUser = System.currentTimeMillis();
@@ -207,29 +196,12 @@ public class ApplicationServiceImpl implements ApplicationService {
             applicationList = applicationDao.findByCreateUserAndStatus(userName, request.getStatus(), request.getCommentType(), page, size);
             total = applicationDao.countByCreateUserAndStatus(userName, request.getStatus(), request.getCommentType());
         }
+
         long currentTimeResponse = System.currentTimeMillis();
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-
-        for (Application application : applicationList) {
-            List<Task> tasks = taskDao.findByApplication(application);
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(userName) || application.getExecuteUser().equals(userName)) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-            applicationResponses.add(response);
-        }
-//        setScheduleInfo(applicationResponses);
-
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
-
-        List<String> applicationIdList = getAllResponse.getData().stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
+        GeneralResponse<GetAllResponse<ApplicationResponse>> result =
+                applicationResponseAssembler.assembleResponse(applicationList, total, userName);
         LOGGER.info("timechecker response :" + (System.currentTimeMillis() - currentTimeResponse));
-        LOGGER.info("Succeed to find applications. size: {}, id of applications: {}", total, applicationIdList);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        return result;
     }
 
 //    private void setScheduleInfo(List<ApplicationResponse> applicationResponses) {
@@ -263,34 +235,13 @@ public class ApplicationServiceImpl implements ApplicationService {
         // Check arguments
         FilterProjectRequest.checkRequest(request);
 
-        Long userId = HttpUtils.getUserId(httpServletRequest);
-        User user = userDao.findById(userId);
+        User user = userContextHelper.getCurrentUser(httpServletRequest);
+        String username = user.getUsername();
 
-        Integer page = request.getPage();
-        Integer size = request.getSize();
-        Long projectId = request.getProjectId();
+        int total = applicationDao.countByCreateUserAndProject(username, request.getProjectId()).intValue();
+        List<Application> applicationList = applicationDao.findByCreateUserAndProject(username, request.getProjectId(), request.getPage(), request.getSize());
 
-        int total = applicationDao.countByCreateUserAndProject(user.getUsername(), projectId).intValue();
-        List<Application> applicationList = applicationDao.findByCreateUserAndProject(user.getUsername(), projectId, page, size);
-
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-        for (Application application : applicationList) {
-            List<Task> tasks = taskDao.findByApplication(application);
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(user.getUsername()) || application.getExecuteUser().equals(user.getUsername())) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-            applicationResponses.add(response);
-        }
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
-
-        List<String> applicationIdList = getAllResponse.getData().stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
-        LOGGER.info("Succeed to find applications. size: {}, id of applications: {}", total, applicationIdList);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        return applicationResponseAssembler.assembleResponse(applicationList, total, username);
     }
 
     @Override
@@ -298,41 +249,22 @@ public class ApplicationServiceImpl implements ApplicationService {
         // Check arguments
         FilterDataSourceRequest.checkRequest(request);
 
-        Integer page = request.getPage();
-        Integer size = request.getSize();
+        User user = userContextHelper.getCurrentUser(httpServletRequest);
+        String username = user.getUsername();
+
         String clusterName = request.getClusterName();
         String databaseName = StringUtils.isEmpty(request.getDatabaseName()) ? "" : request.getDatabaseName();
         String tableName = StringUtils.isEmpty(request.getTableName()) ? "" : request.getTableName();
 
-        Long userId = HttpUtils.getUserId(httpServletRequest);
-        User user = userDao.findById(userId);
+        List<TaskDataSource> taskDataSources = taskDataSourceDao.findByCreateUserAndDatasource(
+                username, clusterName, databaseName, tableName, request.getPage(), request.getSize());
+        long total = taskDataSourceDao.countByCreateUserAndDatasource(username, clusterName, databaseName, tableName);
 
-        List<TaskDataSource> taskDataSources;
-        long total;
-        // Find datasource by user
-        taskDataSources = taskDataSourceDao.findByCreateUserAndDatasource(user.getUsername(), clusterName, databaseName, tableName, page, size);
-        total = taskDataSourceDao.countByCreateUserAndDatasource(user.getUsername(), clusterName, databaseName, tableName);
+        List<Application> applicationList = taskDataSources.stream()
+                .map(jobDataSource -> jobDataSource.getTask().getApplication())
+                .collect(Collectors.toList());
 
-        List<Application> applicationList = taskDataSources.stream().map(jobDataSource -> jobDataSource.getTask().getApplication()).collect(Collectors.toList());
-
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-        for (Application application : applicationList) {
-            List<Task> tasks = taskDao.findByApplication(application);
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(user.getUsername()) || application.getExecuteUser().equals(user.getUsername())) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-            applicationResponses.add(response);
-        }
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
-
-        List<String> applicationIdList = getAllResponse.getData().stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
-        LOGGER.info("Succeed to find applications. size: {}, id of applications: {}", total, applicationIdList);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        return applicationResponseAssembler.assembleResponse(applicationList, total, username);
     }
 
     /**
@@ -349,50 +281,34 @@ public class ApplicationServiceImpl implements ApplicationService {
     public GeneralResponse<GetAllResponse<ApplicationResponse>> filterApplicationId(String applicationId, Integer filterStatus, Integer page, Integer size
         , Integer taskPage, Integer taskSize) {
 
-        Long userId = HttpUtils.getUserId(httpServletRequest);
-        // Find applications by user
-        User user = userDao.findById(userId);
+        User user = userContextHelper.getCurrentUser(httpServletRequest);
+        String username = user.getUsername();
         boolean logSelect = filterStatus != null;
 
-        List<Application> applicationList = applicationDao.findByCreateUserAndId(user.getUsername(), StringUtils.isNotBlank(applicationId) ? "%" + applicationId + "%" : "", logSelect ? 0 : page, logSelect ? 1 : size);
-        long total = applicationDao.countByCreateUserAndId(user.getUsername(), StringUtils.isNotBlank(applicationId) ? "%" + applicationId + "%" : "");
+        List<Application> applicationList = applicationDao.findByCreateUserAndId(username,
+                StringUtils.isNotBlank(applicationId) ? "%" + applicationId + "%" : "", logSelect ? 0 : page, logSelect ? 1 : size);
+        long total = applicationDao.countByCreateUserAndId(username,
+                StringUtils.isNotBlank(applicationId) ? "%" + applicationId + "%" : "");
         if (applicationList == null) {
-            LOGGER.info("User: {} , Not find applications with applicationId: {}", user.getUsername(), applicationId);
+            LOGGER.info("User: {} , Not find applications with applicationId: {}", username, applicationId);
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS_BUT_FIND_NO_RESULTS}", null);
         }
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-        for (Application application : applicationList) {
-            int taskPageTemp = taskPage != null ? taskPage : 0;
-            int taskSizeTemp = taskSize != null ? taskSize : 5;
-            List<Task> tasks = taskDao.findByApplicationPageable(application, logSelect && filterStatus == 1, taskPageTemp, taskSizeTemp);
-            int taskTotal = taskDao.countByApplication(application);
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(user.getUsername()) || application.getExecuteUser().equals(user.getUsername())) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
 
-            response.setTaskTotal(taskTotal);
-            applicationResponses.add(response);
-        }
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
+        int taskPageTemp = taskPage != null ? taskPage : 0;
+        int taskSizeTemp = taskSize != null ? taskSize : 5;
 
-        List<String> applicationIdList = getAllResponse.getData().stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
-        LOGGER.info("User: {}, find {} applications with like applicationId : {},Id of applications: {}", user.getUsername(), applicationList.size(), applicationId, applicationIdList);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        GeneralResponse<GetAllResponse<ApplicationResponse>> result =
+                applicationResponseAssembler.assembleResponseWithTaskPaging(
+                        applicationList, total, username, logSelect, filterStatus, taskPageTemp, taskSizeTemp);
+
+        LOGGER.info("User: {}, find {} applications with like applicationId : {}", username, applicationList.size(), applicationId);
+        return result;
     }
 
     @Override
     public GeneralResponse<Integer> uploadDataSourceAnalysisResult(UploadResultRequest request) throws UnExpectedRequestException, IOException {
         // Login user permission.
-        Long userId = HttpUtils.getUserId(httpServletRequest);
-        User user = userDao.findById(userId);
-        if (user == null) {
-            throw new UnExpectedRequestException("User {&DOES_NOT_EXIST}");
-        }
+        User user = userContextHelper.getCurrentUser(httpServletRequest);
         UploadResultRequest.checkRequest(request);
 
         File tmpFile = getFileFromDataSource(request, user);
@@ -581,70 +497,60 @@ public class ApplicationServiceImpl implements ApplicationService {
 
     @Override
     public GeneralResponse<GetAllResponse<ApplicationResponse>> filterAdvanceApplication(FilterAdvanceRequest request) {
-        Long userId = HttpUtils.getUserId(httpServletRequest);
-        // Find applications by user
-        User user = userDao.findById(userId);
+        User user;
+        try {
+            user = userContextHelper.getCurrentUser(httpServletRequest);
+        } catch (UnExpectedRequestException e) {
+            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
+        }
+        String username = user.getUsername();
+
+        // Apply preprocessing defaults (moved from ApplicationController)
+        if (StringUtils.isEmpty(request.getStartTime())) {
+            request.setStartTime("2019-01-01 00:00:00");
+        }
+        if (StringUtils.isEmpty(request.getEndTime())) {
+            request.setEndTime("2099-01-01 23:59:59");
+        }
+        if (!StringUtils.isEmpty(request.getApplicationId())) {
+            request.setApplicationId("%" + request.getApplicationId() + "%");
+        }
 
         List<Application> applicationList;
         long total = 0;
 
         // If application ID is not empty, just return application which ID like the input string.
         if (StringUtils.isNotBlank(request.getApplicationId())) {
-            applicationList = applicationDao.findByCreateUserAndId(user.getUsername(), request.getApplicationId(), request.getPage(), request.getSize());
-            total = applicationDao.countByCreateUserAndId(user.getUsername(), request.getApplicationId());
+            applicationList = applicationDao.findByCreateUserAndId(username, request.getApplicationId(), request.getPage(), request.getSize());
+            total = applicationDao.countByCreateUserAndId(username, request.getApplicationId());
         } else if (StringUtils.isNotBlank(request.getClusterName())) {
-            Integer taskStatus = null;
             Integer applicationStatus = request.getStatus();
-            if (applicationStatus != null) {
-                if (applicationStatus.equals(ApplicationStatusEnum.FINISHED.getCode())) {
-                    taskStatus = TaskStatusEnum.PASS_CHECKOUT.getCode();
-                } else if (applicationStatus.equals(ApplicationStatusEnum.NOT_PASS.getCode())) {
-                    taskStatus = TaskStatusEnum.FAIL_CHECKOUT.getCode();
-                } else if (applicationStatus.equals(ApplicationStatusEnum.SUCCESSFUL_CREATE_APPLICATION.getCode())) {
-                    taskStatus = TaskStatusEnum.INITED.getCode();
-                } else if (applicationStatus.equals(ApplicationStatusEnum.RUNNING.getCode())) {
-                    taskStatus = TaskStatusEnum.RUNNING.getCode();
-                } else if (applicationStatus == 0) {
-                    applicationStatus = null;
-                }
+            Integer taskStatus = StatusMapping.applicationStatusToTaskStatus(applicationStatus);
+            if (applicationStatus != null && applicationStatus == 0) {
+                applicationStatus = null;
             }
             // If data source is not empty, it will be used as the basic filter.
-            applicationList = applicationDao.findApplicationByAdvanceConditionsWithDatasource(user.getUsername(), request.getClusterName()
+            applicationList = applicationDao.findApplicationByAdvanceConditionsWithDatasource(username, request.getClusterName()
                     , request.getDatabaseName(), request.getTableName(), request.getProjectId(), taskStatus, applicationStatus, request.getCommentType()
                     , request.getStartTime(), request.getEndTime(), request.getRuleGroupId(), request.getExecuteUser(), request.getPage()
                     , request.getSize());
-            total = applicationDao.countApplicationByAdvanceConditionsWithDatasource(user.getUsername(), request.getClusterName()
+            total = applicationDao.countApplicationByAdvanceConditionsWithDatasource(username, request.getClusterName()
                     , request.getDatabaseName(), request.getTableName(), request.getProjectId(), taskStatus, applicationStatus
                     , request.getCommentType(), request.getStartTime(), request.getEndTime()
                     , request.getRuleGroupId(), request.getExecuteUser());
         } else {
-            Page<Application> applicationPage = applicationDao.findApplicationByAdvanceConditions(user.getUsername(), request.getProjectId(), request.getStatus(), request.getCommentType()
+            Page<Application> applicationPage = applicationDao.findApplicationByAdvanceConditions(username, request.getProjectId(), request.getStatus(), request.getCommentType()
                     , request.getStartTime(), request.getEndTime(), request.getRuleGroupId(), request.getExecuteUser(), CollectionUtils.isEmpty(request.getStopAbleStatus()) ? null : request.getStopAbleStatus()
                     , StringUtils.isNotEmpty(request.getStartFinishTime())?request.getStartFinishTime(): Strings.EMPTY, StringUtils.isNotEmpty(request.getEndFinishTime())?request.getEndFinishTime(): Strings.EMPTY, request.getPage(), request.getSize());
             applicationList = applicationPage.getContent();
             total = applicationPage.getTotalElements();
         }
 
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-
+        // Use pre-fetched task map to avoid double-fetching
         List<Task> taskList = taskDao.findByApplicationList(applicationList);
-        Map<String, List<Task>> applicationListMap = taskList.stream().collect(Collectors.groupingBy(task -> task.getApplication().getId()));
-        for (Application application : applicationList) {
-            List<Task> tasks = applicationListMap.get(application.getId());
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(user.getUsername()) || application.getExecuteUser().equals(user.getUsername())) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-            applicationResponses.add(response);
-        }
+        Map<String, List<Task>> applicationTaskMap = taskList.stream().collect(Collectors.groupingBy(task -> task.getApplication().getId()));
 
-//        setScheduleInfo(applicationResponses);
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        return applicationResponseAssembler.assembleResponse(applicationList, total, username, applicationTaskMap);
     }
 
     @Override
@@ -660,13 +566,13 @@ public class ApplicationServiceImpl implements ApplicationService {
         // Check arguments
         PageRequest.checkRequest(request);
 
-        Long userId = HttpUtils.getUserId(httpServletRequest);
-        User user = userDao.findById(userId);
+        User user = userContextHelper.getCurrentUser(httpServletRequest);
+        String username = user.getUsername();
 
         long total;
 
         // Find datasource by user
-        List<Map<String, String>> taskDataSourceMap = taskDataSourceDao.findByUser(user.getUsername());
+        List<Map<String, String>> taskDataSourceMap = taskDataSourceDao.findByUser(username);
         total = taskDataSourceMap.size();
 
         List<ApplicationClusterResponse> response = new ArrayList<>();

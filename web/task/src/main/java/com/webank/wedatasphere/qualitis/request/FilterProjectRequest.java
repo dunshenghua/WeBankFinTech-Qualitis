@@ -19,22 +19,17 @@ package com.webank.wedatasphere.qualitis.request;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.webank.wedatasphere.qualitis.project.request.CommonChecker;
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
-import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
-import com.webank.wedatasphere.qualitis.project.request.CommonChecker;
 
 /**
  * @author howeye
  */
-public class FilterProjectRequest {
+public class FilterProjectRequest extends AbstractPageRequest {
 
     @JsonProperty("project_id")
     private Long projectId;
-    private Integer page;
-    private Integer size;
 
     public FilterProjectRequest() {
-        this.page = 0;
-        this.size = 5;
+        super();
     }
 
     public Long getProjectId() {
@@ -45,23 +40,8 @@ public class FilterProjectRequest {
         this.projectId = projectId;
     }
 
-    public Integer getPage() {
-        return page;
-    }
-
-    public void setPage(Integer page) {
-        this.page = page;
-    }
-
-    public Integer getSize() {
-        return size;
-    }
-
-    public void setSize(Integer size) {
-        this.size = size;
-    }
-
     public static void checkRequest(FilterProjectRequest request) throws UnExpectedRequestException {
+        request.validatePagination();
         CommonChecker.checkObject(request.getProjectId(), "Project_id");
     }
 }
