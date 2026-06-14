@@ -123,6 +123,7 @@ import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.concurrent.*;
 
 /**
  * @author howeye
@@ -262,6 +263,12 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         ERR_CODE_TYPE.put(50079, 14);
     }
 
+    private static final ThreadPoolExecutor ASYNC_EXECUTION_POOL = new ThreadPoolExecutor(50,
+            Integer.MAX_VALUE, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(1000),
+            Executors.defaultThreadFactory(),
+            new ThreadPoolExecutor.DiscardPolicy());
+
     @Autowired
     private ApplicationCommentDao applicationCommentDao;
     private static final List<ApplicationComment> APPLICATION_COMMENT_LIST = Lists.newArrayList();
@@ -294,6 +301,18 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
     @Override
     @Transactional(rollbackFor = {RuntimeException.class, UnExpectedRequestException.class})
     public GeneralResponse generalExecution(GeneralExecutionRequest request, String loginUser) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        if (request.getAsync()) {
+            LOGGER.info("Start to async run submit application.");
+            request.setAsync(false);
+            ASYNC_EXECUTION_POOL.execute(() -> {
+                try {
+                    outerExecutionService.generalExecution(request, loginUser);
+                } catch (Exception e) {
+                    LOGGER.error("Async execution failed.", e);
+                }
+            });
+            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCESS_ASYNC_SUBMIT_TASK}", null);
+        }
         Boolean exceedTaskSize = taskService.getExecutingTaskNumber(-24) >= thresholdValue;
         if (exceedTaskSize) {
             return new GeneralResponse<>("5001", "Number of task exceeded limit", null);
@@ -381,54 +400,7 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         String executionUser = request.getExecutionUser();
         String loginUser = getLoginUser(landUser, request.getCreateUser(), request.getAsync());
 
-        LOGGER.info("Execute parameter entry. execution param: {}", request.getExecutionParam());
-        // Parse set flag in execution parameters, such as: qualitis.spark.set.xx=xx
-        Map<String, Object> resultMaps = handleSetFlagParameters(request.getExecutionParam());
-        if (!resultMaps.isEmpty()) {
-            if (resultMaps.get(EXECUTION_PARAM) != null) {
-                request.setExecutionParam(resultMaps.get(EXECUTION_PARAM).toString());
-            }
-            if (resultMaps.get(SET_FLAG) != null && StringUtils.isBlank(request.getSetFlag())) {
-                request.setSetFlag(resultMaps.get(SET_FLAG).toString());
-            } else if (resultMaps.get(SET_FLAG) != null && StringUtils.isNotBlank(request.getSetFlag())) {
-                StringBuilder tmpSetFlag = new StringBuilder();
-                String[] setStrs = request.getSetFlag().split(SpecCharEnum.DIVIDER.getValue());
-                for (String setStr : setStrs) {
-                    if (setStr.startsWith("spark.sql.")) {
-                        tmpSetFlag.append(setStr.replace("spark.sql.", "")).append(SpecCharEnum.DIVIDER.getValue());
-                    }
-                }
-
-                if (tmpSetFlag != null && tmpSetFlag.length() > 0) {
-                    request.setSetFlag(tmpSetFlag.deleteCharAt(tmpSetFlag.length() - 1).toString() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get("set_flag").toString());
-                } else {
-                    request.setSetFlag(request.getSetFlag() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get("set_flag").toString());
-                }
-
-            }
-        }
-        LOGGER.info("set_flag: {}", request.getSetFlag());
-
-        //Parse fpsFileId、fpsHashValue in executionParam
-        Map<String, Object> multipleParameterMaps = handleFpsIdAndValueParameters(request.getExecutionParam(), request.getFpsFileId(), request.getFpsHashValue());
-        if (!multipleParameterMaps.isEmpty()) {
-            if (multipleParameterMaps.get(EXECUTION_PARAM) != null) {
-                request.setExecutionParam(multipleParameterMaps.get(EXECUTION_PARAM).toString());
-            }
-            if (multipleParameterMaps.get(FPS_ID) != null) {
-                request.setFpsFileId(multipleParameterMaps.get(FPS_ID).toString());
-            }
-            if (multipleParameterMaps.get(FPS_HASH) != null) {
-                request.setFpsHashValue(multipleParameterMaps.get(FPS_HASH).toString());
-            }
-            if (multipleParameterMaps.get(ENV_NAMES) != null) {
-                request.setEnvNames(multipleParameterMaps.get(ENV_NAMES).toString());
-            }
-
-        }
-        LOGGER.info("fps_file_id: {}", request.getFpsFileId());
-        LOGGER.info("fps_hash: {}", request.getFpsHashValue());
-        LOGGER.info("env_names: {}", request.getEnvNames());
+        ParsedExecutionParams parsed = preprocessExecutionParams(request);
 
         LOGGER.info("Qualitis execution user: {}", executionUser);
         LOGGER.info("Qualitis login or create user: {}", loginUser);
@@ -449,32 +421,12 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
             throw new UnExpectedRequestException("{&NO_RULE_CAN_BE_EXECUTED}");
         }
         LOGGER.info("Succeed to find rule group list from project[id={}], rule group[{}]", projectInDb.getId(), Arrays.toString(ruleGroups.toArray()));
-        // Parse partition and run date and split by from execution parameters.
-        StringBuilder partition = new StringBuilder();
-        StringBuilder runDate = new StringBuilder();
-        StringBuilder runToday = new StringBuilder();
-        StringBuilder splitBy = new StringBuilder();
 
-        Map<String, String> execParamMap = new HashMap<>(5);
-        //alone split by parameter
-        StringBuilder specialSplitBy = new StringBuilder();
-        StringBuilder specialEngineReuse = new StringBuilder();
-        StringBuilder lastExecutionParam = new StringBuilder();
-        if (StringUtils.isNotBlank(request.getSplitBy()) && !request.getExecutionParam().contains(SPLIT_BY)) {
-            specialSplitBy.append(SPLIT_BY + SpecCharEnum.COLON.getValue() + request.getSplitBy());
-        }
-        if (request.getEngineReuse() != null && !request.getExecutionParam().contains(ENGINE_REUSE)) {
-            specialEngineReuse.append(ENGINE_REUSE + SpecCharEnum.COLON.getValue() + request.getEngineReuse());
-        }
-        lastExecutionParam.append(StringUtils.isNotEmpty(request.getExecutionParam()) ? request.getExecutionParam() : "");
-        if (specialSplitBy != null && specialSplitBy.length() > 0) {
-            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialSplitBy.toString() : specialSplitBy.toString());
-        }
-        if (specialEngineReuse != null && specialEngineReuse.length() > 0) {
-            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialEngineReuse.toString() : specialEngineReuse.toString());
-        }
-
-        parseExecParams(partition, runDate, runToday, splitBy, lastExecutionParam != null && lastExecutionParam.length() > 0 ? lastExecutionParam.toString() : "", execParamMap);
+        StringBuilder partition = parsed.partition;
+        StringBuilder runDate = parsed.runDate;
+        StringBuilder runToday = parsed.runToday;
+        StringBuilder splitBy = parsed.splitBy;
+        Map<String, String> execParamMap = parsed.execParamMap;
 
         ApplicationProjectResponse applicationProjectResponse = new ApplicationProjectResponse();
         List<ApplicationSubmitRequest> applicationSubmitRequests = new ArrayList<>(ruleGroups.size());
@@ -528,48 +480,15 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
                 LOGGER.warn("{&THERE_IS_NO_RULE_IN_OPEN_STATE}");
                 continue;
             }
-            try {
-                // Dynamic partition.
-                submitRulesWithDynamicPartition(applicationSubmitRequests, projectInDb.getId(), ruleGroup.getId(), rules, ruleIds, executionUser
-                        , request.getDyNamicPartition(), request.getClusterName(), partition, request.getDyNamicPartitionPrefix());
+            // Dynamic partition.
+            boolean dynamicPartitionSucceeded = handleDynamicPartitionExceptions(request.getJobId(), request.getProjectId(), ruleGroup.getId(),
+                    request.getCreateUser(), executionUser, invokeCode, partition.toString(),
+                    request.getStartupParamName(), request.getExecutionParam(), rules, "project execution",
+                    () -> submitRulesWithDynamicPartition(applicationSubmitRequests, projectInDb.getId(), ruleGroup.getId(), rules, ruleIds, executionUser
+                            , request.getDyNamicPartition(), request.getClusterName(), partition, request.getDyNamicPartitionPrefix()));
 
-                if (CollectionUtils.isEmpty(ruleIds)) {
-                    continue;
-                }
-            } catch (ResourceAccessException e) {
-                List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.METADATA_ISSUES.getCode().toString())).collect(Collectors.toList());
-                Integer applicationCommentCode = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                generateAbnormalApplicationInfo(request.getJobId(), request.getProjectId(), ruleGroup.getId(), request.getCreateUser(), executionUser
-                        , new Date(), invokeCode, partition.toString(), request.getStartupParamName(), request.getExecutionParam(), e, applicationCommentCode
-                        , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                LOGGER.error("One group execution[id={}] of the project execution start failed!", ruleGroup.getId());
-            } catch (NoPartitionException e) {
-                List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.METADATA_ISSUES.getCode().toString())).collect(Collectors.toList());
-                Integer applicationCommentCode = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                generateAbnormalApplicationInfo(request.getJobId(), request.getProjectId(), ruleGroup.getId(), request.getCreateUser(), executionUser
-                        , new Date(), invokeCode, partition.toString(), request.getStartupParamName(), request.getExecutionParam(), e, applicationCommentCode
-                        , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                LOGGER.error("One group execution[id={}] of the project execution start failed!", ruleGroup.getId());
-            } catch (JobSubmitException e) {
-                Integer commentCode = ERR_CODE_TYPE.get(e.getErrCode());
-                List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.UNKNOWN_ERROR_ISSUES.getCode().toString())).collect(Collectors.toList());
-                Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                // Record submit failed applicatoin.
-                generateAbnormalApplicationInfo(request.getJobId(), request.getProjectId(), ruleGroup.getId(), request.getCreateUser(), executionUser
-                        , new Date(), invokeCode, partition.toString(), request.getStartupParamName(), request.getExecutionParam(), e, commentCode != null ? commentCode : code
-                        , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                LOGGER.error("One group execution[id={}] of the project execution start failed!", ruleGroup.getId());
-            } catch (Exception e) {
-                List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.UNKNOWN_ERROR_ISSUES.getCode().toString())).collect(Collectors.toList());
-                Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                generateAbnormalApplicationInfo(request.getJobId(), request.getProjectId(), ruleGroup.getId(), request.getCreateUser(), executionUser
-                        , new Date(), invokeCode, partition.toString(), request.getStartupParamName(), request.getExecutionParam(), e, code
-                        , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                LOGGER.error("One group execution[id={}] of the project execution start failed!", ruleGroup.getId());
+            if (dynamicPartitionSucceeded && CollectionUtils.isEmpty(ruleIds)) {
+                continue;
             }
 
             applicationSubmitRequests.add(new ApplicationSubmitRequest(projectInDb.getId(), ruleGroup.getId(), ruleIds, partition));
@@ -601,6 +520,49 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         newApplication.setStartupParam(startupParams);
         newApplication.setExecutionParam(executionParams);
         catchAndSolve(e, applicationCommentCode, applicationStatusCode, rules, newApplication);
+    }
+
+    @FunctionalInterface
+    private interface DynamicPartitionAction {
+        void execute() throws Exception;
+    }
+
+    private Integer resolveApplicationCommentCode(ApplicationCommentEnum commentEnum) {
+        return APPLICATION_COMMENT_LIST.stream()
+                .filter(item -> item.getCode().toString().equals(commentEnum.getCode().toString()))
+                .findFirst().map(ApplicationComment::getCode).orElse(null);
+    }
+
+    private boolean handleDynamicPartitionExceptions(
+            String jobId, Long projectId, Long ruleGroupId, String createUser,
+            String executionUser, Integer invokeCode, String partition,
+            String startupParam, String executionParam, List<Rule> rules,
+            String logContext, DynamicPartitionAction action) {
+        try {
+            action.execute();
+            return true;
+        } catch (ResourceAccessException | NoPartitionException e) {
+            Integer code = resolveApplicationCommentCode(ApplicationCommentEnum.METADATA_ISSUES);
+            generateAbnormalApplicationInfo(jobId, projectId, ruleGroupId, createUser, executionUser
+                    , new Date(), invokeCode, partition, startupParam, executionParam, e, code
+                    , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
+            LOGGER.error("One group execution[id={}] of the {} start failed!", ruleGroupId, logContext);
+        } catch (JobSubmitException e) {
+            Integer commentCode = ERR_CODE_TYPE.get(e.getErrCode());
+            Integer fallbackCode = resolveApplicationCommentCode(ApplicationCommentEnum.UNKNOWN_ERROR_ISSUES);
+            generateAbnormalApplicationInfo(jobId, projectId, ruleGroupId, createUser, executionUser
+                    , new Date(), invokeCode, partition, startupParam, executionParam, e
+                    , commentCode != null ? commentCode : fallbackCode
+                    , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
+            LOGGER.error("One group execution[id={}] of the {} start failed!", ruleGroupId, logContext);
+        } catch (Exception e) {
+            Integer code = resolveApplicationCommentCode(ApplicationCommentEnum.UNKNOWN_ERROR_ISSUES);
+            generateAbnormalApplicationInfo(jobId, projectId, ruleGroupId, createUser, executionUser
+                    , new Date(), invokeCode, partition, startupParam, executionParam, e, code
+                    , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
+            LOGGER.error("One group execution[id={}] of the {} start failed!", ruleGroupId, logContext);
+        }
+        return false;
     }
 
     private void submitRulesWithDynamicPartition(List<ApplicationSubmitRequest> applicationSubmitRequests, Long projectId, Long ruleGroupId, List<Rule> rules
@@ -751,51 +713,7 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         LOGGER.info("Group execution request: {}", request.toString());
         String loginUser = getLoginUser(landUser, request.getCreateUser(), request.getAsync());
 
-        LOGGER.info("Execute parameter entry. execution_param: {}", request.getExecutionParam());
-        // Parse set flag in execution parameters, such as: qualitis.spark.set.xx=xx
-        Map<String, Object> resultMaps = handleSetFlagParameters(request.getExecutionParam());
-        if (!resultMaps.isEmpty()) {
-            if (resultMaps.get(EXECUTION_PARAM) != null) {
-                request.setExecutionParam(resultMaps.get(EXECUTION_PARAM).toString());
-            }
-            if (resultMaps.get(SET_FLAG) != null && StringUtils.isBlank(request.getSetFlag())) {
-                request.setSetFlag(resultMaps.get(SET_FLAG).toString());
-            } else if (resultMaps.get(SET_FLAG) != null && StringUtils.isNotBlank(request.getSetFlag())) {
-                StringBuilder tmpSetFlag = new StringBuilder();
-                String[] setStrs = request.getSetFlag().split(SpecCharEnum.DIVIDER.getValue());
-                for (String setStr : setStrs) {
-                    if (setStr.startsWith("spark.sql.")) {
-                        tmpSetFlag.append(setStr.replace("spark.sql.", "")).append(SpecCharEnum.DIVIDER.getValue());
-                    }
-                }
-
-                if (tmpSetFlag != null && tmpSetFlag.length() > 0) {
-                    request.setSetFlag(tmpSetFlag.deleteCharAt(tmpSetFlag.length() - 1).toString() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get("set_flag").toString());
-                } else {
-                    request.setSetFlag(request.getSetFlag() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get("set_flag").toString());
-                }
-
-            }
-        }
-        LOGGER.info("set_flag: {}", request.getSetFlag());
-
-        //Parse fpsFileId、fpsHashValue in executionParam
-        Map<String, Object> multipleParameterMaps = handleFpsIdAndValueParameters(request.getExecutionParam(), request.getFpsFileId(), request.getFpsHashValue());
-        if (!multipleParameterMaps.isEmpty()) {
-            if (multipleParameterMaps.get(EXECUTION_PARAM) != null) {
-                request.setExecutionParam(multipleParameterMaps.get(EXECUTION_PARAM).toString());
-            }
-            if (multipleParameterMaps.get(FPS_ID) != null) {
-                request.setFpsFileId(multipleParameterMaps.get(FPS_ID).toString());
-            }
-            if (multipleParameterMaps.get(FPS_HASH) != null) {
-                request.setFpsHashValue(multipleParameterMaps.get(FPS_HASH).toString());
-            }
-
-        }
-
-        LOGGER.info("fps_file_id: {}", request.getFpsFileId());
-        LOGGER.info("fps_hash: {}", request.getFpsHashValue());
+        ParsedExecutionParams parsed = preprocessExecutionParams(request);
 
         // Check existence of project
         RuleGroup ruleGroupInDb = ruleGroupDao.findById(request.getGroupId());
@@ -825,32 +743,11 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         }
         List<Long> ruleIds = rules.stream().map(Rule::getId).collect(Collectors.toList());
 
-        // Parse partition and run date and split by from execution parameters.
-        Map<String, String> execParamMap = new HashMap<>(8);
-        StringBuilder partition = new StringBuilder();
-        StringBuilder runDate = new StringBuilder();
-        StringBuilder runToday = new StringBuilder();
-        StringBuilder splitBy = new StringBuilder();
-
-        //alone split by parameter
-        StringBuilder specialSplitBy = new StringBuilder();
-        StringBuilder specialEngineReuse = new StringBuilder();
-        StringBuilder lastExecutionParam = new StringBuilder();
-        if (StringUtils.isNotBlank(request.getSplitBy()) && !request.getExecutionParam().contains(SPLIT_BY)) {
-            specialSplitBy.append(SPLIT_BY + SpecCharEnum.COLON.getValue() + request.getSplitBy());
-        }
-        if (request.getEngineReuse() != null && !request.getExecutionParam().contains(ENGINE_REUSE)) {
-            specialEngineReuse.append(ENGINE_REUSE + SpecCharEnum.COLON.getValue() + request.getEngineReuse());
-        }
-        lastExecutionParam.append(StringUtils.isNotEmpty(request.getExecutionParam()) ? request.getExecutionParam() : "");
-        if (specialSplitBy != null && specialSplitBy.length() > 0) {
-            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialSplitBy.toString() : specialSplitBy.toString());
-        }
-        if (specialEngineReuse != null && specialEngineReuse.length() > 0) {
-            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialEngineReuse.toString() : specialEngineReuse.toString());
-        }
-
-        parseExecParams(partition, runDate, runToday, splitBy, lastExecutionParam != null && lastExecutionParam.length() > 0 ? lastExecutionParam.toString() : "", execParamMap);
+        StringBuilder partition = parsed.partition;
+        StringBuilder runDate = parsed.runDate;
+        StringBuilder runToday = parsed.runToday;
+        StringBuilder splitBy = parsed.splitBy;
+        Map<String, String> execParamMap = parsed.execParamMap;
 
         if (CollectionUtils.isEmpty(ruleIds)) {
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_DISPATCH_TASK}", null);
@@ -995,6 +892,101 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         return maps;
     }
 
+    /**
+     * Holds the parsed results of execution parameter preprocessing.
+     */
+    static class ParsedExecutionParams {
+        final StringBuilder partition = new StringBuilder();
+        final StringBuilder runDate = new StringBuilder();
+        final StringBuilder runToday = new StringBuilder();
+        final StringBuilder splitBy = new StringBuilder();
+        final Map<String, String> execParamMap = new HashMap<>(5);
+    }
+
+    /**
+     * Unified parameter preprocessing pipeline. Replaces the ~60-line block that was
+     * duplicated in projectExecution, ruleListExecution, groupExecution, and dataSourceExecution.
+     *
+     * Steps:
+     * 1. Parse and extract set-flags (qualitis.spark.set.*) from executionParam
+     * 2. Parse and extract fps_id / fps_hash / env_names from executionParam
+     * 3. Merge standalone splitBy and engineReuse into executionParam
+     * 4. Parse partition, run_date, run_today, split_by from the final executionParam
+     */
+    private ParsedExecutionParams preprocessExecutionParams(AbstractExecutionRequest request) {
+        LOGGER.info("Execute parameter entry. execution_param: {}", request.getExecutionParam());
+
+        // Step 1: Parse set flag in execution parameters, such as: qualitis.spark.set.xx=xx
+        Map<String, Object> resultMaps = handleSetFlagParameters(request.getExecutionParam());
+        if (!resultMaps.isEmpty()) {
+            if (resultMaps.get(EXECUTION_PARAM) != null) {
+                request.setExecutionParam(resultMaps.get(EXECUTION_PARAM).toString());
+            }
+            if (resultMaps.get(SET_FLAG) != null && StringUtils.isBlank(request.getSetFlag())) {
+                request.setSetFlag(resultMaps.get(SET_FLAG).toString());
+            } else if (resultMaps.get(SET_FLAG) != null && StringUtils.isNotBlank(request.getSetFlag())) {
+                StringBuilder tmpSetFlag = new StringBuilder();
+                String[] setStrs = request.getSetFlag().split(SpecCharEnum.DIVIDER.getValue());
+                for (String setStr : setStrs) {
+                    if (setStr.startsWith("spark.sql.")) {
+                        tmpSetFlag.append(setStr.replace("spark.sql.", "")).append(SpecCharEnum.DIVIDER.getValue());
+                    }
+                }
+                if (tmpSetFlag.length() > 0) {
+                    request.setSetFlag(tmpSetFlag.deleteCharAt(tmpSetFlag.length() - 1).toString() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get(SET_FLAG).toString());
+                } else {
+                    request.setSetFlag(request.getSetFlag() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get(SET_FLAG).toString());
+                }
+            }
+        }
+        LOGGER.info("set_flag: {}", request.getSetFlag());
+
+        // Step 2: Parse fpsFileId, fpsHashValue, envNames in executionParam
+        Map<String, Object> multipleParameterMaps = handleFpsIdAndValueParameters(request.getExecutionParam(), request.getFpsFileId(), request.getFpsHashValue());
+        if (!multipleParameterMaps.isEmpty()) {
+            if (multipleParameterMaps.get(EXECUTION_PARAM) != null) {
+                request.setExecutionParam(multipleParameterMaps.get(EXECUTION_PARAM).toString());
+            }
+            if (multipleParameterMaps.get(FPS_ID) != null) {
+                request.setFpsFileId(multipleParameterMaps.get(FPS_ID).toString());
+            }
+            if (multipleParameterMaps.get(FPS_HASH) != null) {
+                request.setFpsHashValue(multipleParameterMaps.get(FPS_HASH).toString());
+            }
+            if (multipleParameterMaps.get(ENV_NAMES) != null) {
+                request.setEnvNames(multipleParameterMaps.get(ENV_NAMES).toString());
+            }
+        }
+        LOGGER.info("fps_file_id: {}", request.getFpsFileId());
+        LOGGER.info("fps_hash: {}", request.getFpsHashValue());
+        LOGGER.info("env_names: {}", request.getEnvNames());
+
+        // Step 3: Merge standalone splitBy and engineReuse into executionParam
+        ParsedExecutionParams parsed = new ParsedExecutionParams();
+        StringBuilder specialSplitBy = new StringBuilder();
+        StringBuilder specialEngineReuse = new StringBuilder();
+        StringBuilder lastExecutionParam = new StringBuilder();
+        if (StringUtils.isNotBlank(request.getSplitBy()) && (request.getExecutionParam() == null || !request.getExecutionParam().contains(SPLIT_BY))) {
+            specialSplitBy.append(SPLIT_BY).append(SpecCharEnum.COLON.getValue()).append(request.getSplitBy());
+        }
+        if (request.getEngineReuse() != null && (request.getExecutionParam() == null || !request.getExecutionParam().contains(ENGINE_REUSE))) {
+            specialEngineReuse.append(ENGINE_REUSE).append(SpecCharEnum.COLON.getValue()).append(request.getEngineReuse());
+        }
+        lastExecutionParam.append(StringUtils.isNotEmpty(request.getExecutionParam()) ? request.getExecutionParam() : "");
+        if (specialSplitBy.length() > 0) {
+            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialSplitBy.toString() : specialSplitBy.toString());
+        }
+        if (specialEngineReuse.length() > 0) {
+            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialEngineReuse.toString() : specialEngineReuse.toString());
+        }
+
+        // Step 4: Parse partition, run_date, run_today, split_by
+        parseExecParams(parsed.partition, parsed.runDate, parsed.runToday, parsed.splitBy,
+                lastExecutionParam.length() > 0 ? lastExecutionParam.toString() : "", parsed.execParamMap);
+
+        return parsed;
+    }
+
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = {RuntimeException.class, UnExpectedRequestException.class})
     public GeneralResponse handleCheckAlert(String executionUser, RuleGroup ruleGroupInDb, Project projectInDb, String executionParam) throws UnExpectedRequestException, PermissionDeniedRequestException {
@@ -1137,55 +1129,7 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         // Check Arguments.
         RuleListExecutionRequest.checkRequest(request);
         String loginUser = getLoginUser(landUser, request.getCreateUser(), request.getAsync());
-        LOGGER.info("Execute parameter entry. execution_param: {}", request.getExecutionParam());
-
-        // Parse set flag in execution parameters, such as: qualitis.spark.set.xx=xx
-        Map<String, Object> resultMaps = handleSetFlagParameters(request.getExecutionParam());
-        if (!resultMaps.isEmpty()) {
-            if (resultMaps.get(EXECUTION_PARAM) != null) {
-                request.setExecutionParam(resultMaps.get(EXECUTION_PARAM).toString());
-            }
-            if (resultMaps.get(SET_FLAG) != null && StringUtils.isBlank(request.getSetFlag())) {
-                request.setSetFlag(resultMaps.get(SET_FLAG).toString());
-            } else if (resultMaps.get(SET_FLAG) != null && StringUtils.isNotBlank(request.getSetFlag())) {
-                StringBuilder tmpSetFlag = new StringBuilder();
-                String[] setStrs = request.getSetFlag().split(SpecCharEnum.DIVIDER.getValue());
-                for (String setStr : setStrs) {
-                    if (setStr.startsWith("spark.sql.")) {
-                        tmpSetFlag.append(setStr.replace("spark.sql.", "")).append(SpecCharEnum.DIVIDER.getValue());
-                    }
-                }
-
-                if (tmpSetFlag != null && tmpSetFlag.length() > 0) {
-                    request.setSetFlag(tmpSetFlag.deleteCharAt(tmpSetFlag.length() - 1).toString() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get("set_flag").toString());
-                } else {
-                    request.setSetFlag(request.getSetFlag() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get("set_flag").toString());
-                }
-
-            }
-        }
-        LOGGER.info("set_flag: {}", request.getSetFlag());
-
-        //Parse fpsFileId、fpsHashValue in executionParam
-        Map<String, Object> multipleParameterMaps = handleFpsIdAndValueParameters(request.getExecutionParam(), request.getFpsFileId(), request.getFpsHashValue());
-        if (!multipleParameterMaps.isEmpty()) {
-            if (multipleParameterMaps.get(EXECUTION_PARAM) != null) {
-                request.setExecutionParam(multipleParameterMaps.get(EXECUTION_PARAM).toString());
-            }
-            if (multipleParameterMaps.get(FPS_ID) != null) {
-                request.setFpsFileId(multipleParameterMaps.get(FPS_ID).toString());
-            }
-            if (multipleParameterMaps.get(FPS_HASH) != null) {
-                request.setFpsHashValue(multipleParameterMaps.get(FPS_HASH).toString());
-            }
-            if (multipleParameterMaps.get(ENV_NAMES) != null) {
-                request.setEnvNames(multipleParameterMaps.get(ENV_NAMES).toString());
-            }
-
-        }
-        LOGGER.info("fps_file_id: {}", request.getFpsFileId());
-        LOGGER.info("fps_hash: {}", request.getFpsHashValue());
-        LOGGER.info("env_names: {}", request.getEnvNames());
+        ParsedExecutionParams parsed = preprocessExecutionParams(request);
 
         // Check the existence of rule.
         List<Rule> rules = request.getExecutableRuleList();
@@ -1204,32 +1148,12 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         }
         LOGGER.info("Succeed to find all rules.");
         checkPermissionCreateUserProxyExecuteUser(request.getCreateUser(), request.getExecutionUser());
-        // Parse partition and run date and split by from execution parameters.
-        StringBuilder partition = new StringBuilder();
-        StringBuilder runDate = new StringBuilder();
-        StringBuilder splitBy = new StringBuilder();
-        StringBuilder runToday = new StringBuilder();
 
-        Map<String, String> execParamMap = new HashMap<>(5);
-        //alone split by parameter
-        StringBuilder specialSplitBy = new StringBuilder();
-        StringBuilder specialEngineReuse = new StringBuilder();
-        StringBuilder lastExecutionParam = new StringBuilder();
-        if (StringUtils.isNotBlank(request.getSplitBy()) && !request.getExecutionParam().contains(SPLIT_BY)) {
-            specialSplitBy.append(SPLIT_BY + SpecCharEnum.COLON.getValue() + request.getSplitBy());
-        }
-        if (request.getEngineReuse() != null && !request.getExecutionParam().contains(ENGINE_REUSE)) {
-            specialEngineReuse.append(ENGINE_REUSE + SpecCharEnum.COLON.getValue() + request.getEngineReuse());
-        }
-        lastExecutionParam.append(StringUtils.isNotEmpty(request.getExecutionParam()) ? request.getExecutionParam() : "");
-        if (specialSplitBy != null && specialSplitBy.length() > 0) {
-            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialSplitBy.toString() : specialSplitBy.toString());
-        }
-        if (specialEngineReuse != null && specialEngineReuse.length() > 0) {
-            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialEngineReuse.toString() : specialEngineReuse.toString());
-        }
-
-        parseExecParams(partition, runDate, runToday, splitBy, lastExecutionParam != null && lastExecutionParam.length() > 0 ? lastExecutionParam.toString() : "", execParamMap);
+        StringBuilder partition = parsed.partition;
+        StringBuilder runDate = parsed.runDate;
+        StringBuilder runToday = parsed.runToday;
+        StringBuilder splitBy = parsed.splitBy;
+        Map<String, String> execParamMap = parsed.execParamMap;
 
         ApplicationProjectResponse applicationProjectResponse = new ApplicationProjectResponse();
         List<ApplicationSubmitRequest> applicationSubmitRequests = new ArrayList<>(rules.size());
@@ -1307,49 +1231,14 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
                         .distinct().collect(Collectors.toList());
                 List<Long> currentRuleIds = currentRulesOfGroup.stream().map(Rule::getId).distinct().collect(Collectors.toList());
                 // Dynamic partition.
-                try {
-                    submitRulesWithDynamicPartition(applicationSubmitRequests, projectInDb.getId(), ruleGroup.getId(), currentRulesOfGroup, currentRuleIds
-                            , request.getExecutionUser(), request.getDyNamicPartition(), request.getClusterName(), partition, request.getDyNamicPartitionPrefix());
-                    if (CollectionUtils.isEmpty(currentRuleIds)) {
-                        continue;
-                    }
-                } catch (ResourceAccessException e) {
-                    List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.METADATA_ISSUES.getCode().toString())).collect(Collectors.toList());
-                    Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
+                boolean dynamicPartitionSucceeded = handleDynamicPartitionExceptions(request.getJobId(), projectInDb.getId(), ruleGroup.getId(),
+                        request.getCreateUser(), request.getExecutionUser(), invokeCode, partition.toString(),
+                        request.getStartupParamName(), request.getExecutionParam(), rules, "rule list execution",
+                        () -> submitRulesWithDynamicPartition(applicationSubmitRequests, projectInDb.getId(), ruleGroup.getId(), currentRulesOfGroup, currentRuleIds
+                                , request.getExecutionUser(), request.getDyNamicPartition(), request.getClusterName(), partition, request.getDyNamicPartitionPrefix()));
 
-                    // Record submit failed applicatoin.
-                    generateAbnormalApplicationInfo(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), request.getCreateUser(), request.getExecutionUser()
-                            , new Date(), invokeCode, partition.toString(), request.getStartupParamName(), request.getExecutionParam(), e, code
-                            , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                    LOGGER.error("One group execution[id={}] of the rule list execution start failed!", ruleGroup.getId());
-                } catch (NoPartitionException e) {
-                    List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.METADATA_ISSUES.getCode().toString())).collect(Collectors.toList());
-                    Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                    // Record submit failed applicatoin.
-                    generateAbnormalApplicationInfo(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), request.getCreateUser(), request.getExecutionUser()
-                            , new Date(), invokeCode, partition.toString(), request.getStartupParamName(), request.getExecutionParam(), e, code
-                            , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                    LOGGER.error("One group execution[id={}] of the rule list execution start failed!", ruleGroup.getId());
-                } catch (JobSubmitException e) {
-                    Integer commentCode = ERR_CODE_TYPE.get(e.getErrCode());
-                    List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.UNKNOWN_ERROR_ISSUES.getCode().toString())).collect(Collectors.toList());
-                    Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                    // Record submit failed applicatoin.
-                    generateAbnormalApplicationInfo(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), request.getCreateUser(), request.getExecutionUser()
-                            , new Date(), invokeCode, partition.toString(), request.getStartupParamName(), request.getExecutionParam(), e, commentCode != null ? commentCode : code
-                            , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                    LOGGER.error("One group execution[id={}] of the datasource execution start failed!", ruleGroup.getId());
-                } catch (Exception e) {
-                    List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.METADATA_ISSUES.getCode().toString())).collect(Collectors.toList());
-                    Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                    // Record submit failed applicatoin.
-                    generateAbnormalApplicationInfo(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), request.getCreateUser(), request.getExecutionUser()
-                            , new Date(), invokeCode, partition.toString(), request.getStartupParamName(), request.getExecutionParam(), e, code
-                            , ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                    LOGGER.error("One group execution[id={}] of the rule list execution start failed!", ruleGroup.getId());
+                if (dynamicPartitionSucceeded && CollectionUtils.isEmpty(currentRuleIds)) {
+                    continue;
                 }
                 applicationSubmitRequests.add(new ApplicationSubmitRequest(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), currentRuleIds, partition));
 
@@ -1375,32 +1264,7 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         // Check Arguments.
         DataSourceExecutionRequest.checkRequest(request);
         String loginUser = getLoginUser(landUser, request.getCreateUser(), request.getAsync());
-
-        // Parse set flag in execution parameters, such as: qualitis.spark.set.xx=xx
-        Map<String, Object> resultMaps = handleSetFlagParameters(request.getExecutionParam());
-        if (!resultMaps.isEmpty()) {
-            if (resultMaps.get(EXECUTION_PARAM) != null) {
-                request.setExecutionParam(resultMaps.get(EXECUTION_PARAM).toString());
-            }
-            if (resultMaps.get(SET_FLAG) != null && StringUtils.isBlank(request.getSetFlag())) {
-                request.setSetFlag(resultMaps.get(SET_FLAG).toString());
-            } else if (resultMaps.get(SET_FLAG) != null && StringUtils.isNotBlank(request.getSetFlag())) {
-                StringBuilder tmpSetFlag = new StringBuilder();
-                String[] setStrs = request.getSetFlag().split(SpecCharEnum.DIVIDER.getValue());
-                for (String setStr : setStrs) {
-                    if (setStr.startsWith("spark.sql.")) {
-                        tmpSetFlag.append(setStr.replace("spark.sql.", "")).append(SpecCharEnum.DIVIDER.getValue());
-                    }
-                }
-
-                if (tmpSetFlag != null && tmpSetFlag.length() > 0) {
-                    request.setSetFlag(tmpSetFlag.deleteCharAt(tmpSetFlag.length() - 1).toString() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get("set_flag").toString());
-                } else {
-                    request.setSetFlag(request.getSetFlag() + SpecCharEnum.DIVIDER.getValue() + resultMaps.get("set_flag").toString());
-                }
-
-            }
-        }
+        ParsedExecutionParams parsed = preprocessExecutionParams(request);
 
         // Find all rule datasources by user.
         List<RuleDataSource> ruleDataSources = new ArrayList<>();
@@ -1422,32 +1286,13 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
         checkPermissionCreateUserProxyExecuteUser(request.getCreateUser(), request.getExecutionUser());
         ApplicationProjectResponse applicationProjectResponse = new ApplicationProjectResponse();
         List<ApplicationSubmitRequest> applicationSubmitRequests = new ArrayList<>();
-        // Parse partition and run date and split by from execution parameters.
-        StringBuilder partition = new StringBuilder();
-        StringBuilder runDate = new StringBuilder();
-        StringBuilder runToday = new StringBuilder();
-        StringBuilder splitBy = new StringBuilder();
 
-        Map<String, String> execParamMap = new HashMap<>(5);
-        //alone split by parameter
-        StringBuilder specialSplitBy = new StringBuilder();
-        StringBuilder specialEngineReuse = new StringBuilder();
-        StringBuilder lastExecutionParam = new StringBuilder();
-        if (StringUtils.isNotBlank(request.getSplitBy()) && !request.getExecutionParam().contains(SPLIT_BY)) {
-            specialSplitBy.append(SPLIT_BY + SpecCharEnum.COLON.getValue() + request.getSplitBy());
-        }
-        if (request.getEngineReuse() != null && !request.getExecutionParam().contains(ENGINE_REUSE)) {
-            specialEngineReuse.append(ENGINE_REUSE + SpecCharEnum.COLON.getValue() + request.getEngineReuse());
-        }
-        lastExecutionParam.append(StringUtils.isNotEmpty(request.getExecutionParam()) ? request.getExecutionParam() : "");
-        if (specialSplitBy != null && specialSplitBy.length() > 0) {
-            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialSplitBy.toString() : specialSplitBy.toString());
-        }
-        if (specialEngineReuse != null && specialEngineReuse.length() > 0) {
-            lastExecutionParam.append(StringUtils.isNotBlank(lastExecutionParam.toString()) ? SpecCharEnum.DIVIDER.getValue() + specialEngineReuse.toString() : specialEngineReuse.toString());
-        }
+        StringBuilder partition = parsed.partition;
+        StringBuilder runDate = parsed.runDate;
+        StringBuilder runToday = parsed.runToday;
+        StringBuilder splitBy = parsed.splitBy;
+        Map<String, String> execParamMap = parsed.execParamMap;
 
-        parseExecParams(partition, runDate, runToday, splitBy, lastExecutionParam != null && lastExecutionParam.length() > 0 ? lastExecutionParam.toString() : "", execParamMap);
         List<Project> projects = rules.stream().map(Rule::getProject).distinct().collect(Collectors.toList());
 
         handleProjectData(request, loginUser, rules, applicationSubmitRequests, partition, projects);
@@ -1501,47 +1346,11 @@ public class OuterExecutionServiceImpl implements OuterExecutionService {
                 LOGGER.info("Succeed to find current rules of one group with datasource, rule id: {}", currentRuleIds);
 
                 // Dynamic partition.
-                try {
-                    submitRulesWithDynamicPartition(applicationSubmitRequests, projectInDb.getId(), ruleGroup.getId(), rules, currentRuleIds, request.getExecutionUser()
-                            , request.getDyNamicPartition(), request.getClusterName(), partition, request.getDyNamicPartitionPrefix());
-                } catch (ResourceAccessException e) {
-                    List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.METADATA_ISSUES.getCode().toString())).collect(Collectors.toList());
-                    Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                    // Record submit failed applicatoin.
-                    generateAbnormalApplicationInfo(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), request.getCreateUser(), request.getExecutionUser()
-                            , new Date(), InvokeTypeEnum.BDP_CLIENT_API_INVOKE.getCode(), partition.toString(), request.getStartupParamName(), request.getExecutionParam()
-                            , e, code, ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                    LOGGER.error("One group execution[id={}] of the datasource execution start failed!", ruleGroup.getId());
-                } catch (NoPartitionException e) {
-                    List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.METADATA_ISSUES.getCode().toString())).collect(Collectors.toList());
-                    Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                    // Record submit failed applicatoin.
-                    generateAbnormalApplicationInfo(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), request.getCreateUser(), request.getExecutionUser()
-                            , new Date(), InvokeTypeEnum.BDP_CLIENT_API_INVOKE.getCode(), partition.toString(), request.getStartupParamName(), request.getExecutionParam()
-                            , e, code, ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                    LOGGER.error("One group execution[id={}] of the datasource execution start failed!", ruleGroup.getId());
-                } catch (JobSubmitException e) {
-                    Integer commentCode = ERR_CODE_TYPE.get(e.getErrCode());
-                    List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.UNKNOWN_ERROR_ISSUES.getCode().toString())).collect(Collectors.toList());
-                    Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                    // Record submit failed applicatoin.
-                    generateAbnormalApplicationInfo(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), request.getCreateUser(), request.getExecutionUser()
-                            , new Date(), InvokeTypeEnum.BDP_CLIENT_API_INVOKE.getCode(), partition.toString(), request.getStartupParamName(), request.getExecutionParam()
-                            , e, commentCode != null ? commentCode : code, ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                    LOGGER.error("One group execution[id={}] of the datasource execution start failed!", ruleGroup.getId());
-                } catch (Exception e) {
-                    List<ApplicationComment> collect = APPLICATION_COMMENT_LIST.stream().filter(item -> item.getCode().toString().equals(ApplicationCommentEnum.UNKNOWN_ERROR_ISSUES.getCode().toString())).collect(Collectors.toList());
-                    Integer code = CollectionUtils.isNotEmpty(collect) ? collect.get(0).getCode() : null;
-
-                    // Record submit failed applicatoin.
-                    generateAbnormalApplicationInfo(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), request.getCreateUser(), request.getExecutionUser()
-                            , new Date(), InvokeTypeEnum.BDP_CLIENT_API_INVOKE.getCode(), partition.toString(), request.getStartupParamName(), request.getExecutionParam()
-                            , e, code, ApplicationStatusEnum.TASK_SUBMIT_FAILED.getCode(), rules);
-                    LOGGER.error("One group execution[id={}] of the datasource execution start failed!", ruleGroup.getId());
-                }
+                handleDynamicPartitionExceptions(request.getJobId(), projectInDb.getId(), ruleGroup.getId(),
+                        request.getCreateUser(), request.getExecutionUser(), InvokeTypeEnum.BDP_CLIENT_API_INVOKE.getCode(),
+                        partition.toString(), request.getStartupParamName(), request.getExecutionParam(), rules, "datasource execution",
+                        () -> submitRulesWithDynamicPartition(applicationSubmitRequests, projectInDb.getId(), ruleGroup.getId(), rules, currentRuleIds, request.getExecutionUser()
+                                , request.getDyNamicPartition(), request.getClusterName(), partition, request.getDyNamicPartitionPrefix()));
 
                 if (CollectionUtils.isNotEmpty(currentRuleIds)) {
                     applicationSubmitRequests.add(new ApplicationSubmitRequest(request.getJobId(), projectInDb.getId(), ruleGroup.getId(), currentRuleIds, partition));

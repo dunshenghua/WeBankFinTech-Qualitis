@@ -216,57 +216,58 @@ public class CreateAndExecutionServiceImpl implements CreateAndExecutionService 
         }
         checkExecutionParameterAndSave(abstrackAddRequest, loginUser);
         try {
-            if (abstrackAddRequest instanceof AddRuleRequest) {
-                updateBashContentAndWorkflowInfo(abstrackAddRequest, !maps.isEmpty() && maps.get("template_function") != null ? maps.get("template_function").toString() : bashContent, workFlowName, workFlowVersion, workFlowSpace, nodeName);
-                if (ruleGroupInDb != null) {
-                    ((AddRuleRequest) abstrackAddRequest).setRuleGroupId(ruleGroupInDb.getId());
+            String effectiveBashContent = !maps.isEmpty() && maps.get("template_function") != null ? maps.get("template_function").toString() : bashContent;
+            updateBashContentAndWorkflowInfo(abstrackAddRequest, effectiveBashContent, workFlowName, workFlowVersion, workFlowSpace, nodeName);
+            if (ruleGroupInDb != null) {
+                abstrackAddRequest.setRuleGroupId(ruleGroupInDb.getId());
+            }
+
+            RuleTypeEnum ruleType = getRuleType(abstrackAddRequest);
+            if (addDirector.getRule() == null) {
+                switch (ruleType) {
+                    case SINGLE_TEMPLATE_RULE:
+                        ruleResponse = ruleService.addRuleForOuter(abstrackAddRequest, loginUser).getData();
+                        break;
+                    case MULTI_TEMPLATE_RULE:
+                        ruleResponse = multiSourceRuleService.addRuleForOuter(abstrackAddRequest, true).getData();
+                        break;
+                    case CUSTOM_RULE:
+                        ruleResponse = customRuleService.addRuleForOuter(abstrackAddRequest, loginUser).getData();
+                        break;
+                    case FILE_TEMPLATE_RULE:
+                        ruleResponse = fileRuleService.addRuleForOuter(abstrackAddRequest, loginUser).getData();
+                        break;
+                    default:
+                        break;
                 }
-                if (addDirector.getRule() == null) {
-                    ruleResponse = ruleService.addRuleForOuter(abstrackAddRequest, loginUser).getData();
-                } else {
-                    ModifyRuleRequest modifyRuleRequest = new ModifyRuleRequest();
-                    BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
-                    modifyRuleRequest.setRuleId(addDirector.getRule().getId());
-                    ruleResponse = ruleService.modifyRuleDetailForOuter(modifyRuleRequest, loginUser).getData();
-                }
-            } else if (abstrackAddRequest instanceof AddMultiSourceRuleRequest) {
-                updateBashContentAndWorkflowInfo(abstrackAddRequest, !maps.isEmpty() && maps.get("template_function") != null ? maps.get("template_function").toString() : bashContent, workFlowName, workFlowVersion, workFlowSpace, nodeName);
-                if (ruleGroupInDb != null) {
-                    ((AddMultiSourceRuleRequest) abstrackAddRequest).setRuleGroupId(ruleGroupInDb.getId());
-                }
-                if (addDirector.getRule() == null) {
-                    ruleResponse = multiSourceRuleService.addRuleForOuter(abstrackAddRequest, true).getData();
-                } else {
-                    ModifyMultiSourceRequest modifyRuleRequest = new ModifyMultiSourceRequest();
-                    BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
-                    modifyRuleRequest.setRuleId(addDirector.getRule().getId());
-                    ruleResponse = multiSourceRuleService.modifyRuleDetailForOuter(modifyRuleRequest, loginUser).getData();
-                }
-            } else if (abstrackAddRequest instanceof AddCustomRuleRequest) {
-                updateBashContentAndWorkflowInfo(abstrackAddRequest, !maps.isEmpty() && maps.get("template_function") != null ? maps.get("template_function").toString() : bashContent, workFlowName, workFlowVersion, workFlowSpace, nodeName);
-                if (ruleGroupInDb != null) {
-                    ((AddCustomRuleRequest) abstrackAddRequest).setRuleGroupId(ruleGroupInDb.getId());
-                }
-                if (addDirector.getRule() == null) {
-                    ruleResponse = customRuleService.addRuleForOuter(abstrackAddRequest, loginUser).getData();
-                } else {
-                    ModifyCustomRuleRequest modifyRuleRequest = new ModifyCustomRuleRequest();
-                    BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
-                    modifyRuleRequest.setRuleId(addDirector.getRule().getId());
-                    ruleResponse = customRuleService.modifyRuleDetailForOuter(modifyRuleRequest, loginUser).getData();
-                }
-            } else if (abstrackAddRequest instanceof AddFileRuleRequest) {
-                updateBashContentAndWorkflowInfo(abstrackAddRequest, !maps.isEmpty() && maps.get("template_function") != null ? maps.get("template_function").toString() : bashContent, workFlowName, workFlowVersion, workFlowSpace, nodeName);
-                if (ruleGroupInDb != null) {
-                    ((AddFileRuleRequest) abstrackAddRequest).setRuleGroupId(ruleGroupInDb.getId());
-                }
-                if (addDirector.getRule() == null) {
-                    ruleResponse = fileRuleService.addRuleForOuter(abstrackAddRequest, loginUser).getData();
-                } else {
-                    ModifyFileRuleRequest modifyRuleRequest = new ModifyFileRuleRequest();
-                    BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
-                    modifyRuleRequest.setRuleId(addDirector.getRule().getId());
-                    ruleResponse = fileRuleService.modifyRuleDetailForOuter(modifyRuleRequest, loginUser).getData();
+            } else {
+                switch (ruleType) {
+                    case SINGLE_TEMPLATE_RULE:
+                        ModifyRuleRequest modifyRuleRequest = new ModifyRuleRequest();
+                        BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
+                        modifyRuleRequest.setRuleId(addDirector.getRule().getId());
+                        ruleResponse = ruleService.modifyRuleDetailForOuter(modifyRuleRequest, loginUser).getData();
+                        break;
+                    case MULTI_TEMPLATE_RULE:
+                        ModifyMultiSourceRequest modifyMultiRequest = new ModifyMultiSourceRequest();
+                        BeanUtils.copyProperties(abstrackAddRequest, modifyMultiRequest);
+                        modifyMultiRequest.setRuleId(addDirector.getRule().getId());
+                        ruleResponse = multiSourceRuleService.modifyRuleDetailForOuter(modifyMultiRequest, loginUser).getData();
+                        break;
+                    case CUSTOM_RULE:
+                        ModifyCustomRuleRequest modifyCustomRequest = new ModifyCustomRuleRequest();
+                        BeanUtils.copyProperties(abstrackAddRequest, modifyCustomRequest);
+                        modifyCustomRequest.setRuleId(addDirector.getRule().getId());
+                        ruleResponse = customRuleService.modifyRuleDetailForOuter(modifyCustomRequest, loginUser).getData();
+                        break;
+                    case FILE_TEMPLATE_RULE:
+                        ModifyFileRuleRequest modifyFileRequest = new ModifyFileRuleRequest();
+                        BeanUtils.copyProperties(abstrackAddRequest, modifyFileRequest);
+                        modifyFileRequest.setRuleId(addDirector.getRule().getId());
+                        ruleResponse = fileRuleService.modifyRuleDetailForOuter(modifyFileRequest, loginUser).getData();
+                        break;
+                    default:
+                        break;
                 }
             }
             if (ruleResponse == null) {
@@ -290,32 +291,11 @@ public class CreateAndExecutionServiceImpl implements CreateAndExecutionService 
     }
 
     private void updateBashContentAndWorkflowInfo(AbstractCommonRequest abstrackAddRequest, String bashContent, String workFlowName, String workFlowVersion, String workFlowSpace, String nodeName) {
-        if (abstrackAddRequest instanceof AddRuleRequest) {
-            ((AddRuleRequest) abstrackAddRequest).setBashContent(bashContent);
-            ((AddRuleRequest) abstrackAddRequest).setWorkFlowName(workFlowName);
-            ((AddRuleRequest) abstrackAddRequest).setWorkFlowVersion(workFlowVersion);
-            ((AddRuleRequest) abstrackAddRequest).setWorkFlowSpace(workFlowSpace);
-            ((AddRuleRequest) abstrackAddRequest).setNodeName(nodeName);
-        } else if (abstrackAddRequest instanceof AddMultiSourceRuleRequest) {
-            ((AddMultiSourceRuleRequest) abstrackAddRequest).setBashContent(bashContent);
-            ((AddMultiSourceRuleRequest) abstrackAddRequest).setWorkFlowName(workFlowName);
-            ((AddMultiSourceRuleRequest) abstrackAddRequest).setWorkFlowVersion(workFlowVersion);
-            ((AddMultiSourceRuleRequest) abstrackAddRequest).setWorkFlowSpace(workFlowSpace);
-            ((AddMultiSourceRuleRequest) abstrackAddRequest).setNodeName(nodeName);
-        } else if (abstrackAddRequest instanceof AddCustomRuleRequest) {
-            ((AddCustomRuleRequest) abstrackAddRequest).setBashContent(bashContent);
-            ((AddCustomRuleRequest) abstrackAddRequest).setWorkFlowName(workFlowName);
-            ((AddCustomRuleRequest) abstrackAddRequest).setWorkFlowVersion(workFlowVersion);
-            ((AddCustomRuleRequest) abstrackAddRequest).setWorkFlowSpace(workFlowSpace);
-            ((AddCustomRuleRequest) abstrackAddRequest).setNodeName(nodeName);
-        } else if (abstrackAddRequest instanceof AddFileRuleRequest) {
-            ((AddFileRuleRequest) abstrackAddRequest).setBashContent(bashContent);
-            ((AddFileRuleRequest) abstrackAddRequest).setWorkFlowName(workFlowName);
-            ((AddFileRuleRequest) abstrackAddRequest).setWorkFlowVersion(workFlowVersion);
-            ((AddFileRuleRequest) abstrackAddRequest).setWorkFlowSpace(workFlowSpace);
-            ((AddFileRuleRequest) abstrackAddRequest).setNodeName(nodeName);
-        }
-
+        abstrackAddRequest.setBashContent(bashContent);
+        abstrackAddRequest.setWorkFlowName(workFlowName);
+        abstrackAddRequest.setWorkFlowVersion(workFlowVersion);
+        abstrackAddRequest.setWorkFlowSpace(workFlowSpace);
+        abstrackAddRequest.setNodeName(nodeName);
     }
 
     @Override
@@ -684,76 +664,6 @@ public class CreateAndExecutionServiceImpl implements CreateAndExecutionService 
             return RuleTypeEnum.FILE_TEMPLATE_RULE;
         }
         return null;
-    }
-
-    private RuleResponse getRuleResponse(AbstractCommonRequest abstrackAddRequest, CreateAndSubmitRequest request, String templateFunction,
-                                         RuleResponse ruleResponse, AddDirector addDirector) throws UnExpectedRequestException, PermissionDeniedRequestException, IOException {
-        if (abstrackAddRequest instanceof AddRuleRequest) {
-            abstrackAddRequest.setBashContent(templateFunction);
-            if (addDirector.getRule() == null) {
-                ruleResponse = ruleService.addRuleForOuter(abstrackAddRequest, request.getCreateUser()).getData();
-                BdpClientHistory bdpClientHistory = addDirector.getBdpClientHistory();
-                if (bdpClientHistory != null) {
-                    bdpClientHistory.setRuleId(ruleResponse.getRuleId());
-                    bdpClientHistoryDao.save(bdpClientHistory);
-                }
-            } else {
-                ModifyRuleRequest modifyRuleRequest = new ModifyRuleRequest();
-                BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
-                modifyRuleRequest.setRuleId(addDirector.getRule().getId());
-                ruleResponse = ruleService.modifyRuleDetailForOuter(modifyRuleRequest, request.getCreateUser()).getData();
-            }
-        } else if (abstrackAddRequest instanceof AddMultiSourceRuleRequest) {
-            ((AddMultiSourceRuleRequest) abstrackAddRequest).setBashContent(templateFunction);
-            if (addDirector.getRule() == null) {
-                ruleResponse = multiSourceRuleService.addRuleForOuter(abstrackAddRequest, true).getData();
-                BdpClientHistory bdpClientHistory = addDirector.getBdpClientHistory();
-                if (bdpClientHistory != null) {
-                    bdpClientHistory.setRuleId(ruleResponse.getRuleId());
-                    bdpClientHistoryDao.save(bdpClientHistory);
-                }
-            } else {
-                ModifyMultiSourceRequest modifyRuleRequest = new ModifyMultiSourceRequest();
-                BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
-                modifyRuleRequest.setRuleId(addDirector.getRule().getId());
-                ruleResponse = multiSourceRuleService.modifyRuleDetailForOuter(modifyRuleRequest, request.getCreateUser()).getData();
-            }
-        } else if (abstrackAddRequest instanceof AddCustomRuleRequest) {
-            ((AddCustomRuleRequest) abstrackAddRequest).setBashContent(templateFunction);
-            if (addDirector.getRule() == null) {
-                ruleResponse = customRuleService.addRuleForOuter(abstrackAddRequest, request.getCreateUser()).getData();
-                BdpClientHistory bdpClientHistory = addDirector.getBdpClientHistory();
-                if (bdpClientHistory != null) {
-                    bdpClientHistory.setRuleId(ruleResponse.getRuleId());
-                    bdpClientHistoryDao.save(bdpClientHistory);
-                }
-            } else {
-                ModifyCustomRuleRequest modifyRuleRequest = new ModifyCustomRuleRequest();
-                BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
-                modifyRuleRequest.setRuleId(addDirector.getRule().getId());
-                modifyRuleRequest.setFromOuter(true);
-                ruleResponse = customRuleService.modifyRuleDetailForOuter(modifyRuleRequest, request.getCreateUser()).getData();
-            }
-        } else if (abstrackAddRequest instanceof AddFileRuleRequest) {
-            ((AddFileRuleRequest) abstrackAddRequest).setBashContent(templateFunction);
-            if (addDirector.getRule() == null) {
-                ruleResponse = fileRuleService.addRuleForOuter(abstrackAddRequest, request.getCreateUser()).getData();
-                BdpClientHistory bdpClientHistory = addDirector.getBdpClientHistory();
-                if (bdpClientHistory != null) {
-                    bdpClientHistory.setRuleId(ruleResponse.getRuleId());
-                    bdpClientHistoryDao.save(bdpClientHistory);
-                }
-            } else {
-                ModifyFileRuleRequest modifyRuleRequest = new ModifyFileRuleRequest();
-                BeanUtils.copyProperties(abstrackAddRequest, modifyRuleRequest);
-                modifyRuleRequest.setRuleId(addDirector.getRule().getId());
-                ruleResponse = fileRuleService.modifyRuleDetailForOuter(modifyRuleRequest, request.getCreateUser()).getData();
-            }
-        }
-        if (ruleResponse == null) {
-            throw new UnExpectedRequestException("Failed to create rule for bdp-client.");
-        }
-        return ruleResponse;
     }
 
     private RuleResponse setProjectAndRuleInfo(AddDirector addDirector, CreateAndSubmitRequest request, String templateFunction) {

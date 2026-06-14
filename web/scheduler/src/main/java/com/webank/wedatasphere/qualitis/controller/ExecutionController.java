@@ -63,14 +63,14 @@ public class ExecutionController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionController.class);
 
-    @POST
-    @Path("project")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse projectExecution(ProjectExecutionRequest request) throws UnExpectedRequestException, InterruptedException {
-        String loginUser = HttpUtils.getUserName(httpServletRequest);
+    @FunctionalInterface
+    private interface ExecutionAction {
+        GeneralResponse execute() throws Exception;
+    }
+
+    private GeneralResponse executeWithStandardErrorHandling(ExecutionAction action) throws UnExpectedRequestException, InterruptedException {
         try {
-            GeneralResponse generalResponse = executionService.commonHandleRuleOrProjectMethod(request, null, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser);
+            GeneralResponse generalResponse = action.execute();
             return new GeneralResponse<>(generalResponse.getCode(), generalResponse.getMessage(), generalResponse.getData());
         } catch (UnExpectedRequestException e) {
             throw new UnExpectedRequestException(e.getMessage());
@@ -81,6 +81,15 @@ public class ExecutionController {
         } catch (ExecutionException | PermissionDeniedRequestException e) {
             throw new UnExpectedRequestException(e.getMessage());
         }
+    }
+
+    @POST
+    @Path("project")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public GeneralResponse projectExecution(ProjectExecutionRequest request) throws UnExpectedRequestException, InterruptedException {
+        String loginUser = HttpUtils.getUserName(httpServletRequest);
+        return executeWithStandardErrorHandling(() -> executionService.commonHandleRuleOrProjectMethod(request, null, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser));
     }
 
     @POST
@@ -89,18 +98,7 @@ public class ExecutionController {
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse groupListExecution(GroupListExecutionRequest request) throws UnExpectedRequestException, InterruptedException {
         String loginUser = HttpUtils.getUserName(httpServletRequest);
-        try {
-            GeneralResponse generalResponse = executionService.handleRuleGroupListMethod(request, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser);
-            return new GeneralResponse<>(generalResponse.getCode(), generalResponse.getMessage(), generalResponse.getData());
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (InterruptedException e) {
-            LOGGER.error("Interrupted!", e);
-            Thread.currentThread().interrupt();
-            throw new InterruptedException(e.getMessage());
-        } catch (ExecutionException | PermissionDeniedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        }
+        return executeWithStandardErrorHandling(() -> executionService.handleRuleGroupListMethod(request, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser));
     }
 
     @POST
@@ -109,18 +107,7 @@ public class ExecutionController {
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse ruleListExecution(RuleListExecutionRequest request) throws UnExpectedRequestException, InterruptedException {
         String loginUser = HttpUtils.getUserName(httpServletRequest);
-        try {
-            GeneralResponse<?> generalResponse = executionService.commonHandleRuleOrProjectMethod(null, request, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser);
-            return new GeneralResponse<>(generalResponse.getCode(), generalResponse.getMessage(), generalResponse.getData());
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (InterruptedException e) {
-            LOGGER.error("Interrupted!", e);
-            Thread.currentThread().interrupt();
-            throw new InterruptedException(e.getMessage());
-        } catch (ExecutionException | PermissionDeniedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        }
+        return executeWithStandardErrorHandling(() -> executionService.commonHandleRuleOrProjectMethod(null, request, InvokeTypeEnum.UI_INVOKE.getCode(), loginUser));
     }
 
     @GET

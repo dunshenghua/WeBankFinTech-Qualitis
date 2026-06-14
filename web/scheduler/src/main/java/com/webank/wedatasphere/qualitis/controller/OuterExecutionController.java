@@ -68,20 +68,17 @@ public class OuterExecutionController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OuterExecutionController.class);
 
+    private static final ThreadPoolExecutor POOL = new ThreadPoolExecutor(50,
+            Integer.MAX_VALUE, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(1000),
+            Executors.defaultThreadFactory(),
+            new ThreadPoolExecutor.DiscardPolicy());
+
     private HttpServletRequest httpServletRequest;
 
     public OuterExecutionController(@Context HttpServletRequest httpServletRequest) {
         this.httpServletRequest = httpServletRequest;
     }
-
-    private static final ThreadPoolExecutor POOL = new ThreadPoolExecutor(50,
-            Integer.MAX_VALUE,
-            60,
-            TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(1000),
-            Executors.defaultThreadFactory(),
-            new ThreadPoolExecutor.DiscardPolicy());
-
 
     @POST
     @Path("/rule/add")
@@ -104,25 +101,7 @@ public class OuterExecutionController {
     public GeneralResponse<Object> generalExecution(GeneralExecutionRequest request) {
         String loginUser = HttpUtils.getUserName(httpServletRequest);
         try {
-            if (request.getAsync()) {
-                LOGGER.info("Start to axync run submit application.");
-                POOL.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            outerExecutionService.generalExecution(request,loginUser);
-                        } catch (UnExpectedRequestException e) {
-                            LOGGER.error(e.getMessage(), e);
-                        } catch (Exception e) {
-                            LOGGER.error("Async failed exception.", e);
-                        }
-                    }
-                });
-
-                return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCESS_ASYNC_SUBMIT_TASK}", null);
-            } else {
-                return outerExecutionService.generalExecution(request,loginUser);
-            }
+            return outerExecutionService.generalExecution(request, loginUser);
         } catch (UnExpectedRequestException e) {
             LOGGER.error(e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), e);
