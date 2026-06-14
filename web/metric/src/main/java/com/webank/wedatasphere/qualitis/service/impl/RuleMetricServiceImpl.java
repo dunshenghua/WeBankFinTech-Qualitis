@@ -124,6 +124,9 @@ public class RuleMetricServiceImpl implements RuleMetricService {
   @Autowired
   private RoleService roleService;
 
+  @Autowired
+  private RuleMetricHelper ruleMetricHelper;
+
   private static final Logger LOGGER = LoggerFactory.getLogger(RuleMetricServiceImpl.class);
 
   private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -159,10 +162,8 @@ public class RuleMetricServiceImpl implements RuleMetricService {
 
   private GeneralResponse<RuleMetricResponse> addRuleMetricReal(AddRuleMetricRequest request, String userName) throws UnExpectedRequestException, PermissionDeniedRequestException {
     LOGGER.info("Start to add rule metric, add request: [{}], user: [{}]",request.toString(), userName);
-    User loginUser = userDao.findByUsername(userName);
-    List<UserRole> userRoles =  userRoleDao.findByUser(loginUser);
-    Integer roleType = roleService.getRoleType(userRoles);
-    subDepartmentPermissionService.checkEditablePermission(roleType, loginUser, null, request.getDevDepartmentId(), request.getOpsDepartmentId(), false);
+    RuleMetricHelper.LoginContext ctx = ruleMetricHelper.getLoginContext(userName);
+    subDepartmentPermissionService.checkEditablePermission(ctx.getRoleType(), ctx.getLoginUser(), null, request.getDevDepartmentId(), request.getOpsDepartmentId(), false);
 
     checkDuplicateName(request.getName());
     checkDuplicateCode(request.getEnCode());
@@ -209,23 +210,11 @@ public class RuleMetricServiceImpl implements RuleMetricService {
   @Transactional(rollbackFor = {Exception.class, RuntimeException.class, UnExpectedRequestException.class})
   public GeneralResponse<RuleMetricResponse> deleteRuleMetric(long id)
       throws UnExpectedRequestException, PermissionDeniedRequestException {
-    if (id <= 0) {
-      throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-    }
-    // Check rule metric existence.
-    RuleMetric ruleMetricInDb = ruleMetricDao.findById(id);
-    if (ruleMetricInDb == null) {
-      throw new UnExpectedRequestException("Rule Metric ID [" + id + "] {&DOES_NOT_EXIST}");
-    }
+    RuleMetric ruleMetricInDb = ruleMetricHelper.ensureRuleMetricExists(id);
+    RuleMetricHelper.LoginContext ctx = ruleMetricHelper.getLoginContext();
+    LOGGER.info("Start to delete rule metric, rule metric ID: [{}], user: [{}]", id, ctx.getUserName());
 
-    String userName = HttpUtils.getUserName(httpServletRequest);
-    LOGGER.info("Start to delete rule metric, rule metric ID: [{}], user: [{}]", id, userName);
-
-    User loginUser = userDao.findByUsername(userName);
-    List<UserRole> userRoles = userRoleDao.findByUser(loginUser);
-
-    Integer roleType = roleService.getRoleType(userRoles);
-    subDepartmentPermissionService.checkEditablePermission(roleType, loginUser, ruleMetricInDb.getCreateUser(), ruleMetricInDb.getDevDepartmentId(), ruleMetricInDb.getOpsDepartmentId(), false);
+    subDepartmentPermissionService.checkEditablePermission(ctx.getRoleType(), ctx.getLoginUser(), ruleMetricInDb.getCreateUser(), ruleMetricInDb.getDevDepartmentId(), ruleMetricInDb.getOpsDepartmentId(), false);
 
     ruleMetricDao.delete(ruleMetricInDb);
     dataVisibilityService.delete(ruleMetricInDb.getId(), TableDataTypeEnum.RULE_METRIC);
@@ -256,11 +245,8 @@ public class RuleMetricServiceImpl implements RuleMetricService {
     if (!ruleMetricInDb.getEnCode().equals(request.getEnCode())) {
       checkDuplicateCode(request.getEnCode());
     }
-    User loginUser = userDao.findByUsername(userName);
-    List<UserRole> userRoles =  userRoleDao.findByUser(loginUser);
-
-    Integer roleType = roleService.getRoleType(userRoles);
-    subDepartmentPermissionService.checkEditablePermission(roleType, loginUser, ruleMetricInDb.getCreateUser(), request.getDevDepartmentId(), request.getOpsDepartmentId(), false);
+    RuleMetricHelper.LoginContext ctx = ruleMetricHelper.getLoginContext(userName);
+    subDepartmentPermissionService.checkEditablePermission(ctx.getRoleType(), ctx.getLoginUser(), ruleMetricInDb.getCreateUser(), request.getDevDepartmentId(), request.getOpsDepartmentId(), false);
 
     Integer bussCode = request.getBussCode();
     setRuleMetricInDb(request, userName, ruleMetricInDb, bussCode);
@@ -332,14 +318,7 @@ public class RuleMetricServiceImpl implements RuleMetricService {
   @Override
   public GeneralResponse<RuleMetricResponse> getRuleMetricDetail(long id)
       throws UnExpectedRequestException {
-    if (id <= 0) {
-      throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-    }
-    // Check rule metric existence.
-    RuleMetric ruleMetricInDb = ruleMetricDao.findById(id);
-    if (ruleMetricInDb == null) {
-      throw new UnExpectedRequestException("Rule Metric ID [" + id + "] {&DOES_NOT_EXIST}");
-    }
+    RuleMetric ruleMetricInDb = ruleMetricHelper.ensureRuleMetricExists(id);
     DataVisibilityPermissionDto dataVisibilityPermissionDto = new DataVisibilityPermissionDto.Builder()
             .createUser(ruleMetricInDb.getCreateUser())
             .devDepartmentId(ruleMetricInDb.getDevDepartmentId())
@@ -347,28 +326,23 @@ public class RuleMetricServiceImpl implements RuleMetricService {
             .build();
     subDepartmentPermissionService.checkAccessiblePermission(id, TableDataTypeEnum.RULE_METRIC, dataVisibilityPermissionDto);
 
-    String userName = HttpUtils.getUserName(httpServletRequest);
-    LOGGER.info("Start to get rule metric, rule metric ID: [{}], user: [{}]", id, userName);
-    User loginUser = userDao.findByUsername(userName);
-    List<UserRole> userRoles = userRoleDao.findByUser(loginUser);
-
-    Integer roleType = roleService.getRoleType(userRoles);
-    List<Long> devAndOpsInfoWithDeptList = Collections.emptyList();
+    RuleMetricHelper.LoginContext ctx = ruleMetricHelper.getLoginContext();
+    LOGGER.info("Start to get rule metric, rule metric ID: [{}], user: [{}]", id, ctx.getUserName());
 
     RuleMetricResponse ruleMetricResponse = new RuleMetricResponse(ruleMetricInDb);
-    setVisibilityDepartment(ruleMetricResponse, ruleMetricInDb);
-    boolean isEditable = subDepartmentPermissionService.isEditable(roleType, loginUser, ruleMetricInDb.getCreateUser(), ruleMetricInDb.getDevDepartmentId(), ruleMetricInDb.getOpsDepartmentId(), devAndOpsInfoWithDeptList);
+    ruleMetricHelper.populateVisibility(ruleMetricResponse, ruleMetricInDb);
+    boolean isEditable = subDepartmentPermissionService.isEditable(ctx.getRoleType(), ctx.getLoginUser(), ruleMetricInDb.getCreateUser(), ruleMetricInDb.getDevDepartmentId(), ruleMetricInDb.getOpsDepartmentId(), Collections.emptyList());
     ruleMetricResponse.setEditable(isEditable);
     return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_RULE_METRIC_SUCCESSFULLY}", ruleMetricResponse);
   }
 
   @Override
   public GeneralResponse<GetAllResponse<RuleMetricResponse>> getAllRuleMetric(RuleMetricQueryRequest request) throws UnExpectedRequestException {
-    String userName = HttpUtils.getUserName(httpServletRequest);
-    LOGGER.info("Start to get all rule metric, page request: [{}], user: [{}]",request.toString(), userName);
-    User loginUser = userDao.findByUsername(userName);
-    List<UserRole> userRoles =  userRoleDao.findByUser(loginUser);
-    Integer roleType = roleService.getRoleType(userRoles);
+    RuleMetricHelper.LoginContext ctx = ruleMetricHelper.getLoginContext();
+    LOGGER.info("Start to get all rule metric, page request: [{}], user: [{}]",request.toString(), ctx.getUserName());
+    User loginUser = ctx.getLoginUser();
+    List<UserRole> userRoles = ctx.getUserRoles();
+    Integer roleType = ctx.getRoleType();
 
     List<RuleMetric> ruleMetrics = new ArrayList<>();
     List<RuleMetric> usedRuleMetrics = new ArrayList<>();
@@ -432,11 +406,11 @@ public class RuleMetricServiceImpl implements RuleMetricService {
 
   @Override
   public RuleMetricConditionResponse conditions() {
-    String userName = HttpUtils.getUserName(httpServletRequest);
-    LOGGER.info("Start to get rule metric condition, user: [{}]", userName);
-    User loginUser = userDao.findByUsername(userName);
-    List<UserRole> userRoles =  userRoleDao.findByUser(loginUser);
-    Integer roleType = roleService.getRoleType(userRoles);
+    RuleMetricHelper.LoginContext ctx = ruleMetricHelper.getLoginContext();
+    LOGGER.info("Start to get rule metric condition, user: [{}]", ctx.getUserName());
+    User loginUser = ctx.getLoginUser();
+    List<UserRole> userRoles = ctx.getUserRoles();
+    Integer roleType = ctx.getRoleType();
 
     List<RuleMetric> ruleMetrics = new ArrayList<>();
     if (roleType.equals(RoleSystemTypeEnum.ADMIN.getCode())) {
@@ -476,34 +450,13 @@ public class RuleMetricServiceImpl implements RuleMetricService {
   @Override
   public GeneralResponse<GetAllResponse<RuleMetricResponse>> queryRuleMetric(RuleMetricQueryRequest request, boolean needVisibilityDepartmentList) throws UnExpectedRequestException {
     CommonChecker.checkObject(request, "Rule Metric query request");
-    if (StringUtils.isBlank(request.getSubSystemName())) {
-      request.setSubSystemName("");
-    }
-    if (StringUtils.isBlank(request.getRuleMetricName())) {
-      request.setRuleMetricName("%");
-    } else {
-      request.setRuleMetricName("%" + request.getRuleMetricName() + "%");
-    }
+    Set<String> actionRangeSet = ruleMetricHelper.normalizeQueryParams(request);
 
-    if (StringUtils.isBlank(request.getDevDepartmentId())) {
-      request.setDevDepartmentId("");
-    }
-    if (StringUtils.isBlank(request.getOpsDepartmentId())) {
-      request.setOpsDepartmentId("");
-    }
-    if (StringUtils.isBlank(request.getCreateUser())) {
-      request.setCreateUser("");
-    }
-    if (StringUtils.isBlank(request.getModifyUser())) {
-      request.setModifyUser("");
-    }
-    Set<String> actionRangeSet = CollectionUtils.isEmpty(request.getActionRange()) ? null : request.getActionRange();
-
-    String userName = HttpUtils.getUserName(httpServletRequest);
-    LOGGER.info("Start to get all rule metric, page request: [{}], user: [{}]", request.toString(), userName);
-    User loginUser = userDao.findByUsername(userName);
-    List<UserRole> userRoles =  userRoleDao.findByUser(loginUser);
-    Integer roleType = roleService.getRoleType(userRoles);
+    RuleMetricHelper.LoginContext ctx = ruleMetricHelper.getLoginContext();
+    LOGGER.info("Start to get all rule metric, page request: [{}], user: [{}]", request.toString(), ctx.getUserName());
+    User loginUser = ctx.getLoginUser();
+    List<UserRole> userRoles = ctx.getUserRoles();
+    Integer roleType = ctx.getRoleType();
     List<RuleMetric> ruleMetrics = new ArrayList<>();
     long total;
     if (roleType.equals(RoleSystemTypeEnum.ADMIN.getCode())) {
@@ -514,17 +467,11 @@ public class RuleMetricServiceImpl implements RuleMetricService {
               , request.getAvailable(), request.getMultiEnvs(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, TableDataTypeEnum.RULE_METRIC.getCode(), request.getCreateUser(), request.getModifyUser());
     } else if (roleType.equals(RoleSystemTypeEnum.DEPARTMENT_ADMIN.getCode())) {
       LOGGER.info("DEPARTMENT_ADMIN will get rule metrics of all management departments and all projectors.");
-      List<Long> departmentIds = userRoles.stream().map(UserRole::getRole).filter(Objects::nonNull)
-              .map(Role::getDepartment).filter(Objects::nonNull)
-              .map(Department::getId).collect(Collectors.toList());
-      if (Objects.nonNull(loginUser.getDepartment())) {
-        departmentIds.add(loginUser.getDepartment().getId());
-      }
-      List<Long> devAndOpsInfoWithDeptList = subDepartmentPermissionService.getSubDepartmentIdList(departmentIds);
+      List<Long> devAndOpsInfoWithDeptList = ruleMetricHelper.resolveSubDepartmentIds(ruleMetricHelper.resolveDepartmentAdminDeptIds(ctx));
       ruleMetrics.addAll(ruleMetricDao.queryRuleMetrics(request.getSubSystemName(), request.getRuleMetricName(), request.getEnCode(), request.getType()
-              , request.getAvailable(), request.getAvailable(), request.getMultiEnvs(), TableDataTypeEnum.RULE_METRIC.getCode(), devAndOpsInfoWithDeptList.isEmpty() ? null : devAndOpsInfoWithDeptList, loginUser.getUsername(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, request.getCreateUser(), request.getModifyUser(), request.getPage(), request.getSize()));
+              , request.getAvailable(), request.getAvailable(), request.getMultiEnvs(), TableDataTypeEnum.RULE_METRIC.getCode(), devAndOpsInfoWithDeptList, loginUser.getUsername(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, request.getCreateUser(), request.getModifyUser(), request.getPage(), request.getSize()));
       total = ruleMetricDao.countQueryRuleMetrics(request.getSubSystemName(), request.getRuleMetricName(), request.getEnCode(), request.getType()
-              , request.getAvailable(), request.getMultiEnvs(), TableDataTypeEnum.RULE_METRIC.getCode(), devAndOpsInfoWithDeptList.isEmpty() ? null : devAndOpsInfoWithDeptList, loginUser.getUsername(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, request.getCreateUser(), request.getModifyUser());
+              , request.getAvailable(), request.getMultiEnvs(), TableDataTypeEnum.RULE_METRIC.getCode(), devAndOpsInfoWithDeptList, loginUser.getUsername(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, request.getCreateUser(), request.getModifyUser());
     } else {
       LOGGER.info("PROJECTOR will get rule metrics of department and own.");
       ruleMetrics.addAll(ruleMetricDao.queryRuleMetrics(request.getSubSystemName(), request.getRuleMetricName(), request.getEnCode(), request.getType(), request.getAvailable(), request.getMultiEnvs(), request.getMultiEnvs(),
@@ -536,7 +483,7 @@ public class RuleMetricServiceImpl implements RuleMetricService {
     List<RuleMetricResponse> ruleMetricResponses = ruleMetrics.stream().map(ruleMetric -> {
       RuleMetricResponse ruleMetricResponse = new RuleMetricResponse(ruleMetric);
       if (needVisibilityDepartmentList) {
-        setVisibilityDepartment(ruleMetricResponse, ruleMetric);
+        ruleMetricHelper.populateVisibility(ruleMetricResponse, ruleMetric);
       }
       return ruleMetricResponse;
     }).collect(Collectors.toList());
@@ -547,25 +494,10 @@ public class RuleMetricServiceImpl implements RuleMetricService {
     return new GeneralResponse<>(ResponseStatusConstants.OK, "{&RULE_METRIC_QUERY_SUCCESS}", response);
   }
 
-  private void setVisibilityDepartment(RuleMetricResponse ruleMetricResponse, RuleMetric ruleMetricInDb) {
-    List<DataVisibility> dataVisibilityList = dataVisibilityService.filter(ruleMetricInDb.getId(), TableDataTypeEnum.RULE_METRIC);
-    if (CollectionUtils.isNotEmpty(dataVisibilityList)) {
-      List<DepartmentSubInfoResponse> departmentInfoResponses = dataVisibilityList.stream().map(DepartmentSubInfoResponse::new).collect(Collectors.toList());
-      ruleMetricResponse.setVisibilityDepartmentList(departmentInfoResponses);
-    }
-  }
-
   @Override
   public DataInfo<HiveRuleDetail> getRuleByRuleMetric(long id, int page, int size) throws UnExpectedRequestException {
     DataInfo<HiveRuleDetail> dataInfo = new DataInfo<>();
-    if (id <= 0) {
-      throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-    }
-    // Check rule metric existence.
-    RuleMetric ruleMetricInDb = ruleMetricDao.findById(id);
-    if (ruleMetricInDb == null) {
-      throw new UnExpectedRequestException("Rule Metric ID [" + id + "] {&DOES_NOT_EXIST}");
-    }
+    RuleMetric ruleMetricInDb = ruleMetricHelper.ensureRuleMetricExists(id);
     List<AlarmConfig> alarmConfigs = alarmConfigDao.getByRuleMetric(ruleMetricInDb);
     if (CollectionUtils.isEmpty(alarmConfigs)) {
       return dataInfo;
@@ -598,22 +530,7 @@ public class RuleMetricServiceImpl implements RuleMetricService {
         if (taskResult == null) {
           continue;
         }
-
-        RuleMetricValueResponse ruleMetricValueResponse = new RuleMetricValueResponse();
-        ruleMetricValueResponse.setGenerateTime(taskResult.getCreateTime());
-        Rule currentRule = ruleDao.findById(taskResult.getRuleId());
-        if (currentRule != null) {
-          HiveRuleDetail hiveRuleDetail = new HiveRuleDetail(currentRule);
-          ruleMetricValueResponse.setHiveRuleDetail(hiveRuleDetail);
-          Set<RuleDataSource> ruleDataSources = currentRule.getRuleDataSources();
-          if (CollectionUtils.isNotEmpty(ruleDataSources)) {
-            List<String> datasourceNameList = ruleDataSources.stream().map(RuleDataSource::getLinkisDataSourceName).filter(StringUtils::isNotEmpty).collect(Collectors.toList());
-            ruleMetricValueResponse.setDatasourceNames(datasourceNameList);
-          }
-        }
-        ruleMetricValueResponse.setEnvName(taskResult.getEnvName());
-        ruleMetricValueResponse.setRelatedRuleName(currentRule == null ? "Deleted" : currentRule.getName());
-        ruleMetricValueResponse.setRuleMetricValue(StringUtils.isBlank(taskResult.getValue()) ? "0" : taskResult.getValue());
+        RuleMetricValueResponse ruleMetricValueResponse = ruleMetricHelper.toRuleMetricValueResponse(taskResult, true);
         responses.add(ruleMetricValueResponse);
       }
       GeneralResponse<GetAllResponse<EnvResponse>> allEnvs = getAllEnvs(ruleMetricId);
@@ -757,17 +674,7 @@ public class RuleMetricServiceImpl implements RuleMetricService {
         if (taskResult == null) {
           continue;
         }
-
-        RuleMetricValueResponse ruleMetricValueResponse = new RuleMetricValueResponse();
-        ruleMetricValueResponse.setGenerateTime(taskResult.getCreateTime());
-
-        Rule currentRule = ruleDao.findById(taskResult.getRuleId());
-        if (currentRule != null) {
-          ruleMetricValueResponse.setHiveRuleDetail(new HiveRuleDetail(currentRule));
-        }
-        ruleMetricValueResponse.setRelatedRuleName(currentRule == null ? "Deleted" : currentRule.getName());
-        ruleMetricValueResponse.setRuleMetricValue(StringUtils.isBlank(taskResult.getValue()) ? "0" : taskResult.getValue());
-
+        RuleMetricValueResponse ruleMetricValueResponse = ruleMetricHelper.toRuleMetricValueResponse(taskResult, false);
         ruleMetricListValueResponse.getRuleMetricValues().add(ruleMetricValueResponse);
       }
       responses.add(ruleMetricListValueResponse);
@@ -780,10 +687,7 @@ public class RuleMetricServiceImpl implements RuleMetricService {
     public GeneralResponse<GetAllResponse<EnvResponse>> getAllEnvs(long id) throws UnExpectedRequestException {
       // Check rule metric existence.
       GetAllResponse<EnvResponse> response = new GetAllResponse<>();
-      RuleMetric ruleMetricInDb = ruleMetricDao.findById(id);
-      if (ruleMetricInDb == null) {
-        throw new UnExpectedRequestException("Rule Metric ID [" + id + "] {&DOES_NOT_EXIST}");
-      }
+      RuleMetric ruleMetricInDb = ruleMetricHelper.ensureRuleMetricExists(id);
       List<AlarmConfig> alarmConfigs = alarmConfigDao.getByRuleMetric(ruleMetricInDb);
       if (CollectionUtils.isEmpty(alarmConfigs)) {
         return new GeneralResponse<>(ResponseStatusConstants.OK, "No envs with this rule metric", response);

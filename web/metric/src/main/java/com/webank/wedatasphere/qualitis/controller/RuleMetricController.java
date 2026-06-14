@@ -230,8 +230,12 @@ public class RuleMetricController {
   @Produces(MediaType.APPLICATION_JSON)
   @Consumes(MediaType.APPLICATION_JSON)
   public GeneralResponse<DataInfo<RuleMetricValueResponse>> ruleMetricValues(RuleMetricValuesRequest ruleMetricValuesRequest) {
-    int page = ruleMetricValuesRequest.getPage();
-    int size = ruleMetricValuesRequest.getSize();
+    if (ruleMetricValuesRequest == null || ruleMetricValuesRequest.getRuleMetricId() == null) {
+      LOGGER.warn("rule_metric_value request or ruleMetricId is null");
+      return new GeneralResponse<>(ResponseStatusConstants.BAD_REQUEST, "{&REQUEST_CAN_NOT_BE_NULL}", null);
+    }
+    int page = ruleMetricValuesRequest.getPage() != null ? ruleMetricValuesRequest.getPage() : 0;
+    int size = ruleMetricValuesRequest.getSize() != null ? ruleMetricValuesRequest.getSize() : 15;
     LOGGER.info("get rule metric values request detail: {}", ruleMetricValuesRequest.toString());
     try {
       DataInfo<RuleMetricValueResponse> dataInfo = ruleMetricService.getResultsByRuleMetric(ruleMetricValuesRequest.getRuleMetricId(), ruleMetricValuesRequest.getStartTime()
@@ -250,6 +254,11 @@ public class RuleMetricController {
   @Produces(MediaType.APPLICATION_JSON)
   @Consumes(MediaType.APPLICATION_JSON)
   public GeneralResponse<List<RuleMetricListValueResponse>> ruleMetricListValues(RuleMetricListValuesRequest ruleMetricListValuesRequest) throws UnExpectedRequestException {
+    if (ruleMetricListValuesRequest == null || ruleMetricListValuesRequest.getRuleMetricIdList() == null
+        || ruleMetricListValuesRequest.getRuleMetricIdList().isEmpty()) {
+      LOGGER.warn("rule_metric_value_list request is null or metric id list is empty");
+      return new GeneralResponse<>(ResponseStatusConstants.OK, "{&QUERY_SUCCESSFULLY}", java.util.Collections.emptyList());
+    }
     try {
       List<RuleMetricListValueResponse> responses = ruleMetricService.getResultsByRuleMetricList(ruleMetricListValuesRequest);
 
