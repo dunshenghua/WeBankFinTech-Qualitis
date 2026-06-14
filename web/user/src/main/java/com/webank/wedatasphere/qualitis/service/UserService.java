@@ -85,7 +85,7 @@ public interface UserService {
      * Find all user names
      * @return
      */
-    List<String> findAllUserName();
+    GeneralResponse<List<String>> findAllUserName();
 
     /**
      * Modify user password
@@ -129,7 +129,7 @@ public interface UserService {
      *
      * @return
      */
-    List<Map<String, Object>> getPositionRoleEnum();
+    GeneralResponse<List<Map<String, Object>>> getPositionRoleEnum();
 
     /**
      * sync Department Name

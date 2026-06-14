@@ -35,9 +35,9 @@ import com.webank.wedatasphere.qualitis.request.LocalLoginRequest;
 import com.webank.wedatasphere.qualitis.response.GeneralResponse;
 import com.webank.wedatasphere.qualitis.service.LoginService;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
+import com.webank.wedatasphere.qualitis.util.RequestPreconditions;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.time.FastDateFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -89,7 +89,6 @@ public class LoginServiceImpl implements LoginService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LoginServiceImpl.class);
 
-    public static final FastDateFormat PRINT_TIME_FORMAT = FastDateFormat.getInstance("yyyy-MM-dd HH:mm:ss");
     private static final String URL_REGEX = "^(https?|ftp|file)://.*$";
 
     private static final String ENV_FLAG = "envFlag";
@@ -277,16 +276,8 @@ public class LoginServiceImpl implements LoginService {
     }
 
     private void checkRequest(LocalLoginRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkString(request.getPassword(), "password");
-        checkString(request.getUsername(), "username");
-    }
-
-    private void checkString(String checkField, String fieldName) throws UnExpectedRequestException {
-        if (StringUtils.isBlank(checkField)) {
-            throw new UnExpectedRequestException(fieldName + " {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkString(request.getPassword(), "password");
+        RequestPreconditions.checkString(request.getUsername(), "username");
     }
 }

@@ -44,12 +44,14 @@ import com.webank.wedatasphere.qualitis.response.GetAllResponse;
 import com.webank.wedatasphere.qualitis.response.UserRoleResponse;
 import com.webank.wedatasphere.qualitis.rule.constant.RoleSystemTypeEnum;
 import com.webank.wedatasphere.qualitis.service.UserRoleService;
+import com.webank.wedatasphere.qualitis.service.helper.EntityLookupHelper;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
+import com.webank.wedatasphere.qualitis.util.RequestPreconditions;
 import com.webank.wedatasphere.qualitis.util.SpringContextHolder;
 import com.webank.wedatasphere.qualitis.util.UuidGenerator;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.time.FastDateFormat;
+import com.webank.wedatasphere.qualitis.util.DateUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,7 +61,6 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.core.Context;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -82,7 +83,8 @@ public class UserRoleServiceImpl implements UserRoleService {
     @Autowired
     private ProjectUserDao projectUserDao;
 
-    public static final FastDateFormat PRINT_TIME_FORMAT = FastDateFormat.getInstance("yyyy-MM-dd HH:mm:ss");
+    @Autowired
+    private EntityLookupHelper entityLookupHelper;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UserRoleServiceImpl.class);
     private HttpServletRequest httpServletRequest;
@@ -100,14 +102,8 @@ public class UserRoleServiceImpl implements UserRoleService {
         // Check existence of user, role and user role
         Long userId = request.getUserId();
         Long roleId = request.getRoleId();
-        User userInDb = userDao.findById(userId);
-        if (userInDb == null) {
-            throw new UnExpectedRequestException("userId {&DOES_NOT_EXIST}, request: " + request);
-        }
-        Role roleInDb = roleDao.findById(roleId);
-        if (roleInDb == null) {
-            throw new UnExpectedRequestException("roleId {&DOES_NOT_EXIST}, request: " + request);
-        }
+        User userInDb = entityLookupHelper.findUserByIdOrFail(userId);
+        Role roleInDb = entityLookupHelper.findRoleByIdOrFail(roleId);
         UserRole userRoleInDb = userRoleDao.findByUserAndRole(userInDb, roleInDb);
         if (userRoleInDb != null) {
             throw new UnExpectedRequestException("userId and roleId {&ALREADY_EXIST}, request: " + request);
@@ -127,7 +123,7 @@ public class UserRoleServiceImpl implements UserRoleService {
         newUserRole.setUser(userInDb);
         newUserRole.setId(UuidGenerator.generate());
         newUserRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        newUserRole.setCreateTime(UserRoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        newUserRole.setCreateTime(DateUtils.now());
 
         UserRole savedUserRole = userRoleDao.saveUserRole(newUserRole);
         UserRoleResponse response = new UserRoleResponse(savedUserRole);
@@ -144,10 +140,7 @@ public class UserRoleServiceImpl implements UserRoleService {
 
         // Check existence of user role
         String uuid = request.getUuid();
-        UserRole userRoleInDb = userRoleDao.findByUuid(uuid);
-        if (userRoleInDb == null) {
-            throw new UnExpectedRequestException("user role id {&DOES_NOT_EXIST}, request: " + request);
-        }
+        UserRole userRoleInDb = entityLookupHelper.findUserRoleByUuidOrFail(uuid);
 
         // Delete user role
         userRoleDao.deleteUserRole(userRoleInDb);
@@ -166,23 +159,14 @@ public class UserRoleServiceImpl implements UserRoleService {
 
         // Find user role by id
         String uuid = request.getUuid();
-        UserRole userRoleInDb = userRoleDao.findByUuid(uuid);
-        if (userRoleInDb == null) {
-            throw new UnExpectedRequestException("user role id {&DOES_NOT_EXIST}, request: " + request);
-        }
+        UserRole userRoleInDb = entityLookupHelper.findUserRoleByUuidOrFail(uuid);
         LOGGER.info("Succeed to find user_role, uuid: {}, user_id: {}, role_id: {}, current_user: {}", uuid, userRoleInDb.getUser().getId(),
                 userRoleInDb.getRole().getId(), HttpUtils.getUserName(httpServletRequest));
 
         Long userId = request.getUserId();
         Long roleId = request.getRoleId();
-        User userInDb = userDao.findById(userId);
-        if (userInDb == null) {
-            throw new UnExpectedRequestException("userId {&DOES_NOT_EXIST}, request: " + request);
-        }
-        Role roleInDb = roleDao.findById(roleId);
-        if (roleInDb == null) {
-            throw new UnExpectedRequestException("roleId {&DOES_NOT_EXIST}, request: " + request);
-        }
+        User userInDb = entityLookupHelper.findUserByIdOrFail(userId);
+        Role roleInDb = entityLookupHelper.findRoleByIdOrFail(roleId);
         UserRole userIdAndRoleIdInDb = userRoleDao.findByUserAndRole(userInDb, roleInDb);
         if (userIdAndRoleIdInDb != null) {
             throw new UnExpectedRequestException("userId and roleId {&ALREADY_EXIST}, request: " + request);
@@ -191,7 +175,7 @@ public class UserRoleServiceImpl implements UserRoleService {
         userRoleInDb.setUser(userInDb);
         userRoleInDb.setRole(roleInDb);
         userRoleInDb.setModifyUser(HttpUtils.getUserName(httpServletRequest));
-        userRoleInDb.setModifyTime(UserRoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        userRoleInDb.setModifyTime(DateUtils.now());
         UserRole savedUserRole = userRoleDao.saveUserRole(userRoleInDb);
 
         addProjectPermission(roleId, userInDb);
@@ -227,39 +211,21 @@ public class UserRoleServiceImpl implements UserRoleService {
     }
 
     private void checkRequest(ModifyUserRoleRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkUuid(request.getUuid());
-        checkId(request.getUserId(), "userId");
-        checkId(request.getRoleId(), "roleId");
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkUuid(request.getUuid());
+        RequestPreconditions.checkId(request.getUserId(), "userId");
+        RequestPreconditions.checkId(request.getRoleId(), "roleId");
     }
 
     private void checkRequest(DeleteUserRoleRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkUuid(request.getUuid());
-    }
-
-    private void checkUuid(String uuid) throws UnExpectedRequestException {
-        if (StringUtils.isBlank(uuid)) {
-            throw new UnExpectedRequestException("uuid {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkUuid(request.getUuid());
     }
 
     private void checkRequest(AddUserRoleRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}l");
-        }
-        checkId(request.getUserId(), "userId");
-        checkId(request.getRoleId(), "roleId");
-    }
-
-    private void checkId(Long id, String idName) throws UnExpectedRequestException {
-        if (id == null) {
-            throw new UnExpectedRequestException(idName + " {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkId(request.getUserId(), "userId");
+        RequestPreconditions.checkId(request.getRoleId(), "roleId");
     }
 
     /**

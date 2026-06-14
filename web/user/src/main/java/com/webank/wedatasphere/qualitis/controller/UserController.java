@@ -64,8 +64,6 @@ public class UserController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return userService.addUser(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to create user, username: {}, caused by: {}, current_user: {}", request.getUsername(), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_CREATE_USER}", null);
@@ -81,8 +79,6 @@ public class UserController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return userService.deleteUser(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to delete user, userId: {}, caused by: {}, current_user: {}", request.getUserId(), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_DELETE_USER}", null);
@@ -98,8 +94,6 @@ public class UserController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return userService.initPassword(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to init password of user, user_id: {}, caused by: {}, current_user: {}", request.getUserId(), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_INIT_PASSWORD}", null);
@@ -115,8 +109,6 @@ public class UserController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return userService.findAllUser(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to find all users, page: {}, size: {}, caused by: {}, current_user: {}", request.getPage(), request.getSize(), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_ALL_USERS}", null);
@@ -131,7 +123,7 @@ public class UserController {
         String username = null;
         try {
             username = HttpUtils.getUserName(httpServletRequest);
-            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&FIND_ALL_USERS_SUCCESSFULLY}", userService.findAllUserName());
+            return userService.findAllUserName();
         } catch (Exception e) {
             LOGGER.error("Failed to find all user names, caused by: {}, current_user: {}", e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_ALL_USERS}", null);
@@ -145,8 +137,6 @@ public class UserController {
     public GeneralResponse<Object> modifyDepartment(ModifyDepartmentRequest request) throws UnExpectedRequestException {
         try {
             return userService.modifyDepartment(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to modify department, request: {}, caused by: {}", e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_MODIFY_DEPARTMENT}", null);
@@ -162,8 +152,6 @@ public class UserController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return userService.modifyPassword(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to modify password, userId: {}, caused by: {}", HttpUtils.getUserId(httpServletRequest), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_MODIFY_PASSWORD}", null);
@@ -176,7 +164,7 @@ public class UserController {
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<List<Map<String, Object>>> getPositionRoleConstant() {
         try {
-            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_POSITION_ROLE_ENUMN_SUCCESSFULLY}", userService.getPositionRoleEnum());
+            return userService.getPositionRoleEnum();
         } catch (Exception e) {
             LOGGER.error("Failed to get Scheduled System enumn, caused by system error: {}", e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_POSITION_ROLE_ENUMN}", null);
@@ -193,7 +181,7 @@ public class UserController {
             return roleService.getProxyUserByUser();
         } catch (Exception e) {
             LOGGER.error("Failed to get proxy user of user: {}, caused by: {}, current_user: {}", username, e.getMessage(), username, e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_PROXY_USER_OF_USER}" + username + ", caused by " + e.getMessage(), null);
+            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_PROXY_USER_OF_USER}", null);
         }
     }
 

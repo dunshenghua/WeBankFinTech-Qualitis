@@ -48,12 +48,13 @@ import com.webank.wedatasphere.qualitis.response.UserRolesResponse;
 import com.webank.wedatasphere.qualitis.response.user.AddUserResponse;
 import com.webank.wedatasphere.qualitis.response.user.UserResponse;
 import com.webank.wedatasphere.qualitis.service.UserService;
+import com.webank.wedatasphere.qualitis.service.helper.EntityLookupHelper;
 import com.webank.wedatasphere.qualitis.util.DateUtils;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
+import com.webank.wedatasphere.qualitis.util.RequestPreconditions;
 import com.webank.wedatasphere.qualitis.util.UuidGenerator;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.time.FastDateFormat;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +67,6 @@ import javax.management.relation.RoleNotFoundException;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.core.Context;
 import java.io.IOException;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -92,11 +92,12 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private DepartmentDao departmentDao;
 
+    @Autowired
+    private EntityLookupHelper entityLookupHelper;
+
     private HttpServletRequest httpServletRequest;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UserServiceImpl.class);
-
-    public static final FastDateFormat PRINT_TIME_FORMAT = FastDateFormat.getInstance("yyyy-MM-dd HH:mm:ss");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -110,52 +111,37 @@ public class UserServiceImpl implements UserService {
         // Check Arguments
         checkRequest(request);
 
-        // Check existence of user by username
-        String username = request.getUsername();
-        User userInDb = userDao.findByUsername(username);
-        if (userInDb != null) {
-            throw new UnExpectedRequestException("username: " + username + " {&ALREADY_EXIST}");
-        }
-
-        // Generate random password and save user
-        User newUser = new User();
-        String password = RandomPasswordGenerator.generate(16);
-        String passwordEncoded = Sha256Encoder.encode(password);
-        newUser.setUsername(username);
-        newUser.setPassword(passwordEncoded);
-        newUser.setChineseName(request.getChineseName());
-        newUser.setDepartmentName(request.getDepartmentName());
-        newUser.setUserConfigJson(request.getUserConfigJson());
-        newUser.setSubDepartmentCode(Long.valueOf(request.getDepartmentSubCode()));
-        newUser.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        newUser.setCreateTime(DateUtils.now());
-        // Find department by department name
-        Department departmentInDb = departmentDao.findById(request.getDepartmentId());
-        if (null == departmentInDb) {
-            throw new UnExpectedRequestException("Department ID of " + request.getDepartmentId() + " {&DOES_NOT_EXIST}");
-        }
-        newUser.setDepartment(departmentInDb);
-
-        User savedUser = userDao.saveUser(newUser);
-        AddUserResponse addUserResponse = new AddUserResponse(savedUser, password);
-
-        //新用户----->增加普通用户角色
-        addNormalRoleForUser(savedUser);
+        UserCreationResult result = createAndSaveUser(request);
+        User savedUser = result.user;
 
         //校验职位角色
         checkPositionRole(savedUser, request.getPositionEn(), request.getPositionZh(), false);
 
+        AddUserResponse addUserResponse = new AddUserResponse(savedUser, result.rawPassword);
         LOGGER.info("Succeed to create user, response: {}, current_user: {}", addUserResponse, HttpUtils.getUserName(httpServletRequest));
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&CREATE_USER_SUCCESSFULLY}", addUserResponse);
     }
 
     @Override
     public User addItsmUser(UserAddRequest request) throws UnExpectedRequestException, RoleNotFoundException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkString(request.getUsername(), "username");
+        RequestPreconditions.checkString(request.getDepartmentId().toString(), "Department");
+
+        UserCreationResult result = createAndSaveUser(request);
+        User savedUser = result.user;
+
+        //校验职位角色
+        if (StringUtils.isNotBlank(request.getPositionEn()) && StringUtils.isNotBlank(request.getPositionZh())) {
+            checkPositionRole(savedUser, request.getPositionEn(), request.getPositionZh(), false);
         }
-        checkString(request.getUsername(), "username");
-        checkString(request.getDepartmentId().toString(), "Department");
+        return savedUser;
+    }
+
+    /**
+     * Shared user creation logic for addUser and addItsmUser.
+     */
+    private UserCreationResult createAndSaveUser(UserAddRequest request) throws UnExpectedRequestException, RoleNotFoundException {
         // Check existence of user by username
         String username = request.getUsername();
         User userInDb = userDao.findByUsername(username);
@@ -187,11 +173,17 @@ public class UserServiceImpl implements UserService {
         //新用户----->增加普通用户角色
         addNormalRoleForUser(savedUser);
 
-        //校验职位角色
-        if (StringUtils.isNotBlank(request.getPositionEn()) && StringUtils.isNotBlank(request.getPositionZh())) {
-            checkPositionRole(savedUser, request.getPositionEn(), request.getPositionZh(), false);
+        return new UserCreationResult(savedUser, password);
+    }
+
+    private static class UserCreationResult {
+        final User user;
+        final String rawPassword;
+
+        UserCreationResult(User user, String rawPassword) {
+            this.user = user;
+            this.rawPassword = rawPassword;
         }
-        return savedUser;
     }
 
     public void checkPositionRole(User savedUser, String englishName, String chineseName, Boolean ifModify) throws UnExpectedRequestException {
@@ -202,7 +194,7 @@ public class UserServiceImpl implements UserService {
             newRole.setZnName(chineseName);
             newRole.setName(englishName);
             newRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-            newRole.setCreateTime(UserServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+            newRole.setCreateTime(DateUtils.now());
             Role savedRole = roleDao.saveRole(newRole);
             LOGGER.info("Succeed to add role, role: {}, current_user: {}", savedRole, HttpUtils.getUserName(httpServletRequest));
             addUserRole(savedRole, savedUser, ifModify);
@@ -221,7 +213,7 @@ public class UserServiceImpl implements UserService {
                 userRole.setRole(role);
                 userRole.setUser(savedUser);
                 userRole.setModifyUser(HttpUtils.getUserName(httpServletRequest));
-                userRole.setModifyTime(UserRoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+                userRole.setModifyTime(DateUtils.now());
                 UserRole lastUserRole = userRoleDao.saveUserRole(userRole);
                 LOGGER.info("Succeed to modify user role,user role: {}, current_user: {}", lastUserRole, HttpUtils.getUserName(httpServletRequest));
             } else {
@@ -240,7 +232,7 @@ public class UserServiceImpl implements UserService {
         newUserRole.setId(UuidGenerator.generate());
 
         newUserRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        newUserRole.setCreateTime(UserRoleServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        newUserRole.setCreateTime(DateUtils.now());
         UserRole savedUserRole = userRoleDao.saveUserRole(newUserRole);
         LOGGER.info("Succeed to add user role,user role: {}, current_user: {}", savedUserRole, HttpUtils.getUserName(httpServletRequest));
     }
@@ -253,10 +245,7 @@ public class UserServiceImpl implements UserService {
 
         // Check existence of user by id
         Long userId = request.getUserId();
-        User userInDb = userDao.findById(userId);
-        if (userInDb == null) {
-            throw new UnExpectedRequestException("user id {&DOES_NOT_EXIST}, request: " + request);
-        }
+        User userInDb = entityLookupHelper.findUserByIdOrFail(userId);
         LOGGER.info("deleted userRoles");
         // Check personal template.
         checkTemplate(userInDb);
@@ -286,10 +275,7 @@ public class UserServiceImpl implements UserService {
 
         // Check existence of user by id
         Long id = request.getUserId();
-        User userInDb = userDao.findById(id);
-        if (userInDb == null) {
-            throw new UnExpectedRequestException("user id {&DOES_NOT_EXIST}, request: " + request);
-        }
+        User userInDb = entityLookupHelper.findUserByIdOrFail(id);
 
         // Generate random password and save user
         String password = RandomPasswordGenerator.generate(16);
@@ -322,18 +308,15 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public List<String> findAllUserName() {
-        return userDao.findAllUserName();
+    public GeneralResponse<List<String>> findAllUserName() {
+        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&FIND_ALL_USERS_SUCCESSFULLY}", userDao.findAllUserName());
     }
 
     @Override
     public GeneralResponse modifyDepartment(ModifyDepartmentRequest request) throws UnExpectedRequestException {
         // Check Arguments
         checkRequest(request);
-        User userInDb = userDao.findById(request.getUserId());
-        if (null == userInDb) {
-            throw new UnExpectedRequestException("userId {&DOES_NOT_EXIST}");
-        }
+        User userInDb = entityLookupHelper.findUserByIdOrFail(request.getUserId());
         // Find department by name.
         Department departmentInDb = departmentDao.findById(request.getDepartment());
         if (null == departmentInDb) {
@@ -360,8 +343,8 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public List<Map<String, Object>> getPositionRoleEnum() {
-        return PositionRoleEnum.getPositionRoleEnumList();
+    public GeneralResponse<List<Map<String, Object>>> getPositionRoleEnum() {
+        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_POSITION_ROLE_ENUMN_SUCCESSFULLY}", PositionRoleEnum.getPositionRoleEnumList());
     }
 
     @Override
@@ -423,10 +406,7 @@ public class UserServiceImpl implements UserService {
 
         // Modify if old password is correct
         Long userId = HttpUtils.getUserId(httpServletRequest);
-        User userInDb = userDao.findById(userId);
-        if (null == userInDb) {
-            throw new UnExpectedRequestException("userId {&DOES_NOT_EXIST}");
-        }
+        User userInDb = entityLookupHelper.findUserByIdOrFail(userId);
         String passwordInDb = userInDb.getPassword();
         if (!passwordInDb.equals(request.getOldPassword())) {
             throw new UnExpectedRequestException("{&OLD_PASSWORD_NOT_CORRECT}");
@@ -471,29 +451,22 @@ public class UserServiceImpl implements UserService {
         userRole.setRole(role);
         userRole.setUser(savedUser);
         userRole.setCreateUser(HttpUtils.getUserName(httpServletRequest));
-        userRole.setCreateTime(LoginServiceImpl.PRINT_TIME_FORMAT.format(new Date()));
+        userRole.setCreateTime(DateUtils.now());
         userRoleDao.saveUserRole(userRole);
         LOGGER.info("Succeed to save user_role. uuid: {}, user_id: {}, role_id: {}", userRole.getId(), savedUser.getId(), role.getId());
 
     }
 
     private void checkRequest(ModifyPasswordRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkString(request.getOldPassword(), "old password");
-        checkString(request.getNewPassword(), "new password");
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkString(request.getOldPassword(), "old password");
+        RequestPreconditions.checkString(request.getNewPassword(), "new password");
     }
 
     private void checkRequest(ModifyDepartmentRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        if (request.getUserId() == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkString(request.getUserId().toString(), "user ID");
-        checkString(request.getDepartmentName(), "department role id");
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkId(request.getUserId(), "user ID");
+        RequestPreconditions.checkString(request.getDepartmentName(), "department role id");
         if (StringUtils.isNotBlank(request.getUserConfigJson())) {
             try {
                 new ObjectMapper().readValue(request.getUserConfigJson(), Map.class);
@@ -503,34 +476,17 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    private void checkId(Long id, String idName) throws UnExpectedRequestException {
-        if (null == id) {
-            throw new UnExpectedRequestException(idName + " {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-    }
-
-    private void checkString(String str, String strName) throws UnExpectedRequestException {
-        if (StringUtils.isBlank(str)) {
-            throw new UnExpectedRequestException(strName + " {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-    }
-
-
     private void checkRequest(UserRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkId(request.getUserId(), "id");
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkId(request.getUserId(), "id");
     }
 
     private void checkRequest(UserAddRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkString(request.getUsername(), "username");
-        checkString(request.getDepartmentId().toString(), "Department");
-        checkString(request.getPositionEn(), "PositionEn");
-        checkString(request.getPositionZh(), "PositionZh");
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkString(request.getUsername(), "username");
+        RequestPreconditions.checkString(request.getDepartmentId().toString(), "Department");
+        RequestPreconditions.checkString(request.getPositionEn(), "PositionEn");
+        RequestPreconditions.checkString(request.getPositionZh(), "PositionZh");
         if (StringUtils.isNotBlank(request.getUserConfigJson())) {
             try {
                 objectMapper.readValue(request.getUserConfigJson(), Map.class);

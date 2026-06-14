@@ -34,7 +34,7 @@ import com.webank.wedatasphere.qualitis.response.GetAllResponse;
 import com.webank.wedatasphere.qualitis.response.PermissionResponse;
 import com.webank.wedatasphere.qualitis.util.DateUtils;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
-import org.apache.commons.lang.StringUtils;
+import com.webank.wedatasphere.qualitis.util.RequestPreconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -163,36 +163,14 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     private void checkRequest(DeletePermissionRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkId(request.getPermissionId());
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkId(request.getPermissionId(), "id");
     }
 
     private void checkRequest(ModifyPermissionRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-        checkId(request.getPermissionId());
-        checkMethod(request.getMethod());
-        checkUrl(request.getUrl());
-    }
-
-    private void checkId(Long id) throws UnExpectedRequestException {
-        if (null == id) {
-            throw new UnExpectedRequestException("id " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-    }
-
-    private void checkMethod(String method) throws UnExpectedRequestException {
-        if (StringUtils.isBlank(method)) {
-            throw new UnExpectedRequestException("method " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-    }
-
-    private void checkUrl(String url) throws UnExpectedRequestException {
-        if (StringUtils.isBlank(url)) {
-            throw new UnExpectedRequestException("url " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
+        RequestPreconditions.checkNotNull(request);
+        RequestPreconditions.checkId(request.getPermissionId(), "id");
+        RequestPreconditions.checkString(request.getMethod(), "method");
+        RequestPreconditions.checkString(request.getUrl(), "url");
     }
 }

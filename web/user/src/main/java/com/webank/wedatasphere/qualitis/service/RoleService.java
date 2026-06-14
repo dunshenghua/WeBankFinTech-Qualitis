@@ -94,7 +94,7 @@ public interface RoleService {
      *
      * @return
      */
-    List<Map<String, Object>> getAllRoleTypeEnum();
+    GeneralResponse<List<Map<String, Object>>> getAllRoleTypeEnum();
 
     /**
      * get role list by id

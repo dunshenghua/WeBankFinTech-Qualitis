@@ -20,7 +20,6 @@ import com.webank.wedatasphere.qualitis.constants.ResponseStatusConstants;
 import com.webank.wedatasphere.qualitis.request.permission.AddPermissionRequest;
 import com.webank.wedatasphere.qualitis.request.permission.DeletePermissionRequest;
 import com.webank.wedatasphere.qualitis.request.permission.ModifyPermissionRequest;
-import com.webank.wedatasphere.qualitis.response.AddUserTenantUserResponse;
 import com.webank.wedatasphere.qualitis.response.PermissionResponse;
 import com.webank.wedatasphere.qualitis.service.PermissionService;
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
@@ -28,13 +27,6 @@ import com.webank.wedatasphere.qualitis.request.PageRequest;
 import com.webank.wedatasphere.qualitis.response.GeneralResponse;
 import com.webank.wedatasphere.qualitis.response.GetAllResponse;
 import com.webank.wedatasphere.qualitis.util.HttpUtils;
-import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
-import com.webank.wedatasphere.qualitis.request.permission.AddPermissionRequest;
-import com.webank.wedatasphere.qualitis.request.permission.DeletePermissionRequest;
-import com.webank.wedatasphere.qualitis.request.permission.ModifyPermissionRequest;
-import com.webank.wedatasphere.qualitis.response.GeneralResponse;
-import com.webank.wedatasphere.qualitis.response.PermissionResponse;
-import com.webank.wedatasphere.qualitis.service.PermissionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,8 +55,6 @@ public class PermissionController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return permissionService.addPermission(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to add permission, method: {}, url: {}, caused by: {}, current_user: {}", request.getMethod(), request.getUrl(), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_ADD_PERMISSION}", null);
@@ -80,8 +70,6 @@ public class PermissionController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return permissionService.deletePermission(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to delete permission, permissionId: {}, caused by: {}, current_user: {}", request.getPermissionId(), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_DELETE_PERMISSION}", null);
@@ -96,8 +84,6 @@ public class PermissionController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return permissionService.modifyPermission(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to modify permission, permissionId: {}, caused by: {}, current_user: {}", request.getPermissionId(), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_MODIFY_PERMISSION}", null);
@@ -113,8 +99,6 @@ public class PermissionController {
         try {
             username = HttpUtils.getUserName(httpServletRequest);
             return permissionService.getAllPermission(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
         } catch (Exception e) {
             LOGGER.error("Failed to get all permission, page: {}, size: {}, caused by: {}, current_user: {}", request.getPage(), request.getSize(), e.getMessage(), username, e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_PERMISSION}", null);
