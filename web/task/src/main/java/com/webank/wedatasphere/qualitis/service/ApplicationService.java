@@ -19,6 +19,7 @@ package com.webank.wedatasphere.qualitis.service;
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
 import com.webank.wedatasphere.qualitis.metadata.exception.MetaDataAcquireFailedException;
 import com.webank.wedatasphere.qualitis.request.FilterAdvanceRequest;
+import com.webank.wedatasphere.qualitis.request.FilterApplicationIdRequest;
 import com.webank.wedatasphere.qualitis.request.FilterDataSourceRequest;
 import com.webank.wedatasphere.qualitis.request.FilterProjectRequest;
 import com.webank.wedatasphere.qualitis.request.FilterStatusRequest;
@@ -74,16 +75,11 @@ public interface ApplicationService {
 
     /**
      * Find application by applicationId
-     * @param applicationId
-     * @param filterStatus
-     * @param page
-     * @param size
-     * @param taskPage
-     * @param taskSize
+     * @param request
      * @return
+     * @throws UnExpectedRequestException
      */
-    GeneralResponse<GetAllResponse<ApplicationResponse>> filterApplicationId(String applicationId, Integer filterStatus, Integer page, Integer size,
-        Integer taskPage, Integer taskSize);
+    GeneralResponse<GetAllResponse<ApplicationResponse>> filterApplicationId(FilterApplicationIdRequest request) throws UnExpectedRequestException;
 
     /**
      * Upload datasource analysis result. such as: rules, check, task result value.

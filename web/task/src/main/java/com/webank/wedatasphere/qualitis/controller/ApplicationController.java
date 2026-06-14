@@ -53,6 +53,11 @@ public class ApplicationController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApplicationController.class);
 
+    private <T> GeneralResponse<T> handleApplicationError(Exception e, String errorContext) {
+        LOGGER.error("Failed to find applications. {}, caused by: {}", errorContext, e.getMessage(), e);
+        return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_APPLICATIONS}", null);
+    }
+
     @POST
     @Path("filter/status")
     @Produces(MediaType.APPLICATION_JSON)
@@ -63,9 +68,7 @@ public class ApplicationController {
         } catch (UnExpectedRequestException e) {
             throw new UnExpectedRequestException(e.getResponse().getMessage());
         } catch (Exception e) {
-            LOGGER.error("Failed to find applications. page: {}, size: {}, status: {}, caused by: {}", request.getPage(), request.getSize(),
-                    request.getStatus(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_APPLICATIONS}.", null);
+            return handleApplicationError(e, "page: " + request.getPage() + ", size: " + request.getSize() + ", status: " + request.getStatus());
         }
     }
 
@@ -79,9 +82,7 @@ public class ApplicationController {
         } catch (UnExpectedRequestException e) {
             throw new UnExpectedRequestException(e.getResponse().getMessage());
         } catch (Exception e) {
-            LOGGER.error("Failed to find applications. page: {}, size: {}, application_id: {}, caused by: {}", request.getPage(),
-                    request.getSize(), request.getProjectId(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_APPLICATIONS}.", null);
+            return handleApplicationError(e, "page: " + request.getPage() + ", size: " + request.getSize() + ", project_id: " + request.getProjectId());
         }
     }
 
@@ -95,9 +96,8 @@ public class ApplicationController {
         } catch (UnExpectedRequestException e) {
             throw new UnExpectedRequestException(e.getResponse().getMessage());
         } catch (Exception e) {
-            LOGGER.error("Failed to find applications. page: {}, size: {}, cluster: {}, database: {}, table: {}, caused by: {}", request.getPage(),
-                    request.getSize(), request.getClusterName(), request.getDatabaseName(), request.getTableName(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_APPLICATIONS}.", null);
+            return handleApplicationError(e, "page: " + request.getPage() + ", size: " + request.getSize()
+                    + ", cluster: " + request.getClusterName() + ", database: " + request.getDatabaseName() + ", table: " + request.getTableName());
         }
     }
 
@@ -112,9 +112,7 @@ public class ApplicationController {
         } catch (UnExpectedRequestException e) {
             throw new UnExpectedRequestException(e.getResponse().getMessage());
         } catch (Exception e) {
-            LOGGER.error("Failed to find dataSources. page: {}, size: {}, caused by: {}", pageRequest.getPage(),
-                    pageRequest.getSize(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_APPLICATIONS}", null);
+            return handleApplicationError(e, "page: " + pageRequest.getPage() + ", size: " + pageRequest.getSize());
         }
     }
 
@@ -140,12 +138,12 @@ public class ApplicationController {
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<GetAllResponse<ApplicationResponse>> filterApplicationId(FilterApplicationIdRequest request)
         throws UnExpectedRequestException {
-        FilterApplicationIdRequest.checkRequest(request);
         try {
-            return applicationService.filterApplicationId(request.getApplicationId(), request.getFilterStatus(), request.getPage(), request.getSize(), request.getTaskPage(), request.getTaskSize());
+            return applicationService.filterApplicationId(request);
+        } catch (UnExpectedRequestException e) {
+            throw new UnExpectedRequestException(e.getResponse().getMessage());
         } catch (Exception e) {
-            LOGGER.error("Failed to find application by application_id[{}],system exception.", request.getApplicationId(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_APPLICATIONS}", null);
+            return handleApplicationError(e, "application_id: " + request.getApplicationId());
         }
     }
 
@@ -168,8 +166,7 @@ public class ApplicationController {
         try {
             return applicationService.filterAdvanceApplication(request);
         } catch (Exception e) {
-            LOGGER.error("Failed to find application.", e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_FIND_APPLICATIONS}", null);
+            return handleApplicationError(e, "advance filter");
         }
     }
 

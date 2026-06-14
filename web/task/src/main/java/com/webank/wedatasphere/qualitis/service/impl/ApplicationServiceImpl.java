@@ -54,6 +54,7 @@ import com.webank.wedatasphere.qualitis.project.constant.ExcelSheetName;
 import com.webank.wedatasphere.qualitis.project.dao.ProjectDao;
 import com.webank.wedatasphere.qualitis.project.dao.ProjectUserDao;
 import com.webank.wedatasphere.qualitis.request.FilterAdvanceRequest;
+import com.webank.wedatasphere.qualitis.request.FilterApplicationIdRequest;
 import com.webank.wedatasphere.qualitis.request.FilterDataSourceRequest;
 import com.webank.wedatasphere.qualitis.request.FilterProjectRequest;
 import com.webank.wedatasphere.qualitis.request.FilterStatusRequest;
@@ -102,6 +103,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -152,23 +154,33 @@ public class ApplicationServiceImpl implements ApplicationService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApplicationServiceImpl.class);
 
-    private static final Map<Integer, Integer> COMMENT_STATUS = new HashMap<Integer, Integer>();
+    /**
+     * Maps ApplicationComment code (reason category) to ApplicationStatusEnum code (status filter).
+     * Used to translate a comment-type filter into the corresponding application status for querying.
+     */
+    private static final Map<Integer, Integer> COMMENT_TYPE_TO_APPLICATION_STATUS;
 
     static {
-        COMMENT_STATUS.put(1, 9);
-        COMMENT_STATUS.put(2, 7);
-        COMMENT_STATUS.put(3, 7);
-        COMMENT_STATUS.put(4, 7);
-        COMMENT_STATUS.put(5, 7);
-        COMMENT_STATUS.put(6, 7);
-        COMMENT_STATUS.put(7, 8);
-        COMMENT_STATUS.put(8, 8);
-        COMMENT_STATUS.put(9, 4);
-        COMMENT_STATUS.put(10, 4);
-        COMMENT_STATUS.put(11, 9);
-        COMMENT_STATUS.put(12, 7);
-        COMMENT_STATUS.put(13, 8);
-        COMMENT_STATUS.put(14, 9);
+        Map<Integer, Integer> map = new HashMap<>(16);
+        // Comment types 1, 11, 14 -> TASK_SUBMIT_FAILED (9)
+        map.put(1, 9);
+        map.put(11, 9);
+        map.put(14, 9);
+        // Comment types 2, 3, 4, 5, 6, 12 -> FAILED (7)
+        map.put(2, 7);
+        map.put(3, 7);
+        map.put(4, 7);
+        map.put(5, 7);
+        map.put(6, 7);
+        map.put(12, 7);
+        // Comment types 7, 8, 13 -> NOT_PASS (8)
+        map.put(7, 8);
+        map.put(8, 8);
+        map.put(13, 8);
+        // Comment types 9, 10 -> FINISHED (4)
+        map.put(9, 4);
+        map.put(10, 4);
+        COMMENT_TYPE_TO_APPLICATION_STATUS = Collections.unmodifiableMap(map);
     }
 
     public ApplicationServiceImpl(@Context HttpServletRequest request) {
@@ -187,7 +199,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         }
 
         if (request.getCommentType() != null) {
-            request.setStatus(COMMENT_STATUS.get(request.getCommentType()));
+            request.setStatus(COMMENT_TYPE_TO_APPLICATION_STATUS.get(request.getCommentType()));
         }
 
         List<Application> applicationList;
@@ -208,28 +220,11 @@ public class ApplicationServiceImpl implements ApplicationService {
             total = applicationDao.countByCreateUserAndStatus(userName, request.getStatus(), request.getCommentType());
         }
         long currentTimeResponse = System.currentTimeMillis();
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-
-        for (Application application : applicationList) {
-            List<Task> tasks = taskDao.findByApplication(application);
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(userName) || application.getExecuteUser().equals(userName)) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-            applicationResponses.add(response);
-        }
+        List<ApplicationResponse> applicationResponses = buildApplicationResponses(applicationList, userName);
 //        setScheduleInfo(applicationResponses);
 
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
-
-        List<String> applicationIdList = getAllResponse.getData().stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
         LOGGER.info("timechecker response :" + (System.currentTimeMillis() - currentTimeResponse));
-        LOGGER.info("Succeed to find applications. size: {}, id of applications: {}", total, applicationIdList);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        return buildPaginatedSuccessResponse(applicationResponses, total);
     }
 
 //    private void setScheduleInfo(List<ApplicationResponse> applicationResponses) {
@@ -273,24 +268,8 @@ public class ApplicationServiceImpl implements ApplicationService {
         int total = applicationDao.countByCreateUserAndProject(user.getUsername(), projectId).intValue();
         List<Application> applicationList = applicationDao.findByCreateUserAndProject(user.getUsername(), projectId, page, size);
 
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-        for (Application application : applicationList) {
-            List<Task> tasks = taskDao.findByApplication(application);
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(user.getUsername()) || application.getExecuteUser().equals(user.getUsername())) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-            applicationResponses.add(response);
-        }
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
-
-        List<String> applicationIdList = getAllResponse.getData().stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
-        LOGGER.info("Succeed to find applications. size: {}, id of applications: {}", total, applicationIdList);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        List<ApplicationResponse> applicationResponses = buildApplicationResponses(applicationList, user.getUsername());
+        return buildPaginatedSuccessResponse(applicationResponses, total);
     }
 
     @Override
@@ -315,39 +294,26 @@ public class ApplicationServiceImpl implements ApplicationService {
 
         List<Application> applicationList = taskDataSources.stream().map(jobDataSource -> jobDataSource.getTask().getApplication()).collect(Collectors.toList());
 
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-        for (Application application : applicationList) {
-            List<Task> tasks = taskDao.findByApplication(application);
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(user.getUsername()) || application.getExecuteUser().equals(user.getUsername())) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-            applicationResponses.add(response);
-        }
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
-
-        List<String> applicationIdList = getAllResponse.getData().stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
-        LOGGER.info("Succeed to find applications. size: {}, id of applications: {}", total, applicationIdList);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        List<ApplicationResponse> applicationResponses = buildApplicationResponses(applicationList, user.getUsername());
+        return buildPaginatedSuccessResponse(applicationResponses, total);
     }
 
     /**
      * Find application by applicationId
      *
-     * @param applicationId
-     * @param page
-     * @param size
-     * @param taskPage
-     * @param taskSize
+     * @param request
      * @return
      */
     @Override
-    public GeneralResponse<GetAllResponse<ApplicationResponse>> filterApplicationId(String applicationId, Integer filterStatus, Integer page, Integer size
-        , Integer taskPage, Integer taskSize) {
+    public GeneralResponse<GetAllResponse<ApplicationResponse>> filterApplicationId(FilterApplicationIdRequest request) throws UnExpectedRequestException {
+        FilterApplicationIdRequest.checkRequest(request);
+
+        String applicationId = request.getApplicationId();
+        Integer filterStatus = request.getFilterStatus();
+        Integer page = request.getPage();
+        Integer size = request.getSize();
+        Integer taskPage = request.getTaskPage();
+        Integer taskSize = request.getTaskSize();
 
         Long userId = HttpUtils.getUserId(httpServletRequest);
         // Find applications by user
@@ -367,20 +333,14 @@ public class ApplicationServiceImpl implements ApplicationService {
             int taskSizeTemp = taskSize != null ? taskSize : 5;
             List<Task> tasks = taskDao.findByApplicationPageable(application, logSelect && filterStatus == 1, taskPageTemp, taskSizeTemp);
             int taskTotal = taskDao.countByApplication(application);
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(user.getUsername()) || application.getExecuteUser().equals(user.getUsername())) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-
+            ApplicationResponse response = buildSingleApplicationResponse(application, tasks, user.getUsername());
             response.setTaskTotal(taskTotal);
             applicationResponses.add(response);
         }
         getAllResponse.setData(applicationResponses);
         getAllResponse.setTotal(total);
 
-        List<String> applicationIdList = getAllResponse.getData().stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
+        List<String> applicationIdList = applicationResponses.stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
         LOGGER.info("User: {}, find {} applications with like applicationId : {},Id of applications: {}", user.getUsername(), applicationList.size(), applicationId, applicationIdList);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
     }
@@ -596,16 +556,10 @@ public class ApplicationServiceImpl implements ApplicationService {
             Integer taskStatus = null;
             Integer applicationStatus = request.getStatus();
             if (applicationStatus != null) {
-                if (applicationStatus.equals(ApplicationStatusEnum.FINISHED.getCode())) {
-                    taskStatus = TaskStatusEnum.PASS_CHECKOUT.getCode();
-                } else if (applicationStatus.equals(ApplicationStatusEnum.NOT_PASS.getCode())) {
-                    taskStatus = TaskStatusEnum.FAIL_CHECKOUT.getCode();
-                } else if (applicationStatus.equals(ApplicationStatusEnum.SUCCESSFUL_CREATE_APPLICATION.getCode())) {
-                    taskStatus = TaskStatusEnum.INITED.getCode();
-                } else if (applicationStatus.equals(ApplicationStatusEnum.RUNNING.getCode())) {
-                    taskStatus = TaskStatusEnum.RUNNING.getCode();
-                } else if (applicationStatus == 0) {
+                if (applicationStatus == 0) {
                     applicationStatus = null;
+                } else {
+                    taskStatus = mapApplicationStatusToTaskStatus(applicationStatus);
                 }
             }
             // If data source is not empty, it will be used as the basic filter.
@@ -625,26 +579,10 @@ public class ApplicationServiceImpl implements ApplicationService {
             total = applicationPage.getTotalElements();
         }
 
-        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
-        List<ApplicationResponse> applicationResponses = new ArrayList<>();
-
-        List<Task> taskList = taskDao.findByApplicationList(applicationList);
-        Map<String, List<Task>> applicationListMap = taskList.stream().collect(Collectors.groupingBy(task -> task.getApplication().getId()));
-        for (Application application : applicationList) {
-            List<Task> tasks = applicationListMap.get(application.getId());
-            ApplicationResponse response = new ApplicationResponse(application, tasks);
-            if (application.getCreateUser().equals(user.getUsername()) || application.getExecuteUser().equals(user.getUsername())) {
-                response.setKillOption(true);
-            } else {
-                response.setKillOption(false);
-            }
-            applicationResponses.add(response);
-        }
+        List<ApplicationResponse> applicationResponses = buildApplicationResponsesBatch(applicationList, user.getUsername());
 
 //        setScheduleInfo(applicationResponses);
-        getAllResponse.setData(applicationResponses);
-        getAllResponse.setTotal(total);
-        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+        return buildPaginatedSuccessResponse(applicationResponses, total);
     }
 
     @Override
@@ -677,6 +615,62 @@ public class ApplicationServiceImpl implements ApplicationService {
 
         LOGGER.info("Succeed to find dataSources. size: {}, id of dataSources: {}", total, response);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATION_DATASOURCE}", response);
+    }
+
+    private ApplicationResponse buildSingleApplicationResponse(Application application, List<Task> tasks, String userName) {
+        ApplicationResponse response = new ApplicationResponse(application, tasks);
+        response.setKillOption(application.getCreateUser().equals(userName) || application.getExecuteUser().equals(userName));
+        return response;
+    }
+
+    // TODO: Consider using batch task loading (findByApplicationList) like filterAdvanceApplication for better performance
+    private List<ApplicationResponse> buildApplicationResponses(List<Application> applicationList, String userName) {
+        List<ApplicationResponse> responses = new ArrayList<>();
+        for (Application application : applicationList) {
+            List<Task> tasks = taskDao.findByApplication(application);
+            responses.add(buildSingleApplicationResponse(application, tasks, userName));
+        }
+        return responses;
+    }
+
+    private List<ApplicationResponse> buildApplicationResponsesBatch(List<Application> applicationList, String userName) {
+        List<Task> taskList = taskDao.findByApplicationList(applicationList);
+        Map<String, List<Task>> tasksByApplicationId = taskList.stream().collect(Collectors.groupingBy(task -> task.getApplication().getId()));
+        List<ApplicationResponse> responses = new ArrayList<>();
+        for (Application application : applicationList) {
+            List<Task> tasks = tasksByApplicationId.get(application.getId());
+            responses.add(buildSingleApplicationResponse(application, tasks, userName));
+        }
+        return responses;
+    }
+
+    private GeneralResponse<GetAllResponse<ApplicationResponse>> buildPaginatedSuccessResponse(List<ApplicationResponse> applicationResponses, long total) {
+        GetAllResponse<ApplicationResponse> getAllResponse = new GetAllResponse<>();
+        getAllResponse.setData(applicationResponses);
+        getAllResponse.setTotal(total);
+
+        List<String> applicationIdList = applicationResponses.stream().map(ApplicationResponse::getApplicationId).collect(Collectors.toList());
+        LOGGER.info("Succeed to find applications. size: {}, id of applications: {}", total, applicationIdList);
+        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_APPLICATIONS}", getAllResponse);
+    }
+
+    /**
+     * Maps ApplicationStatusEnum code to the corresponding TaskStatusEnum code for datasource-based queries.
+     * FINISHED(4) -> PASS_CHECKOUT(5), NOT_PASS(8) -> FAIL_CHECKOUT(6),
+     * SUCCESSFUL_CREATE_APPLICATION(10) -> INITED(2), RUNNING(3) -> RUNNING(3).
+     * Returns null for unrecognized status codes.
+     */
+    private Integer mapApplicationStatusToTaskStatus(Integer applicationStatus) {
+        if (applicationStatus.equals(ApplicationStatusEnum.FINISHED.getCode())) {
+            return TaskStatusEnum.PASS_CHECKOUT.getCode();
+        } else if (applicationStatus.equals(ApplicationStatusEnum.NOT_PASS.getCode())) {
+            return TaskStatusEnum.FAIL_CHECKOUT.getCode();
+        } else if (applicationStatus.equals(ApplicationStatusEnum.SUCCESSFUL_CREATE_APPLICATION.getCode())) {
+            return TaskStatusEnum.INITED.getCode();
+        } else if (applicationStatus.equals(ApplicationStatusEnum.RUNNING.getCode())) {
+            return TaskStatusEnum.RUNNING.getCode();
+        }
+        return null;
     }
 
     private void putIntoCluster(List<ApplicationClusterResponse> responses, Map<String, String> taskDataSourceMap, Map<String, ApplicationClusterResponse> map) {
