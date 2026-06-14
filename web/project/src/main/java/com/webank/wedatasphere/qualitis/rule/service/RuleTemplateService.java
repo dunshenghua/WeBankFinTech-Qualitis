@@ -191,6 +191,15 @@ public interface RuleTemplateService {
     void deleteRuleTemplate(Long templateId) throws UnExpectedRequestException, PermissionDeniedRequestException;
 
     /**
+     * Batch delete default templates.
+     *
+     * @param templateIds
+     * @throws UnExpectedRequestException
+     * @throws PermissionDeniedRequestException
+     */
+    void deleteRuleTemplates(List<Long> templateIds) throws UnExpectedRequestException, PermissionDeniedRequestException;
+
+    /**
      * Delete file template.
      *
      * @param templateId

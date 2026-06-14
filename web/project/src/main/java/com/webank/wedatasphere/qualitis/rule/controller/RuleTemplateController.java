@@ -62,12 +62,12 @@ public class RuleTemplateController {
     @Path("multi/all")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllResponse<RuleTemplateResponse>> getMultiRuleTemplate(TemplatePageRequest request) throws UnExpectedRequestException {
+    public GeneralResponse<GetAllResponse<RuleTemplateResponse>> getMultiRuleTemplate(TemplatePageRequest request)
+            throws UnExpectedRequestException {
         try {
             RequestParametersUtils.transcoding(request);
             return ruleTemplateService.getMultiRuleTemplate(request);
         } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
             throw e;
         } catch (Exception e) {
             LOGGER.error("Failed to find multi rule_template, caused by: {}", e.getMessage(), e);
@@ -80,11 +80,11 @@ public class RuleTemplateController {
     @Path("custom/all")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllResponse<RuleTemplateResponse>> getCustomRuleTemplateByUser(PageRequest request) throws UnExpectedRequestException {
+    public GeneralResponse<GetAllResponse<RuleTemplateResponse>> getCustomRuleTemplateByUser(PageRequest request)
+            throws UnExpectedRequestException {
         try {
             return ruleTemplateService.getCustomRuleTemplateByUser(request);
         } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
             throw e;
         } catch (Exception e) {
             LOGGER.error("Failed to find custom rule_template, caused by: {}", e.getMessage(), e);
@@ -96,13 +96,13 @@ public class RuleTemplateController {
     @Path("default/all")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllResponse<RuleTemplateResponse>> getDefaultRuleTemplate(TemplatePageRequest request) throws UnExpectedRequestException {
+    public GeneralResponse<GetAllResponse<RuleTemplateResponse>> getDefaultRuleTemplate(TemplatePageRequest request)
+            throws UnExpectedRequestException {
         request.checkRequest();
         try {
             RequestParametersUtils.transcoding(request);
             return ruleTemplateService.getDefaultRuleTemplate(request);
         } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
             throw e;
         } catch (Exception e) {
             LOGGER.error("Failed to find default rule_template, caused by: {}", e.getMessage(), e);
@@ -113,11 +113,11 @@ public class RuleTemplateController {
     @GET
     @Path("meta/{rule_template_id}")
     @Produces(MediaType.APPLICATION_JSON)
-    public GeneralResponse<TemplateMetaResponse> getRuleTemplateMeta(@PathParam("rule_template_id") Long ruleTemplateId) throws UnExpectedRequestException {
+    public GeneralResponse<TemplateMetaResponse> getRuleTemplateMeta(@PathParam("rule_template_id") Long ruleTemplateId)
+            throws UnExpectedRequestException {
         try {
             return ruleTemplateService.getRuleTemplateMeta(ruleTemplateId);
         } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
             throw e;
         } catch (Exception e) {
             LOGGER.error("Failed to get rule_template. rule_template_id: {}, caused by: {}", ruleTemplateId, e.getMessage(), e);
@@ -128,11 +128,11 @@ public class RuleTemplateController {
     @GET
     @Path("meta_input/{rule_template_id}")
     @Produces(MediaType.APPLICATION_JSON)
-    public GeneralResponse<TemplateInputDemandResponse> getRuleTemplateInputMeta(@PathParam("rule_template_id") Long ruleTemplateId) throws UnExpectedRequestException {
+    public GeneralResponse<TemplateInputDemandResponse> getRuleTemplateInputMeta(@PathParam("rule_template_id") Long ruleTemplateId)
+            throws UnExpectedRequestException {
         try {
             return ruleTemplateService.getRuleTemplateInputMeta(ruleTemplateId);
         } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
             throw e;
         } catch (Exception e) {
             LOGGER.error("Failed to find the input of rule_template. rule_template_id: {}, caused by: {}", ruleTemplateId, e.getMessage(), e);
@@ -144,18 +144,15 @@ public class RuleTemplateController {
     @Path("default/add")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<RuleTemplateResponse> addDefaultRuleTemplate(AddRuleTemplateRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+    public GeneralResponse<RuleTemplateResponse> addDefaultRuleTemplate(AddRuleTemplateRequest request)
+            throws UnExpectedRequestException, PermissionDeniedRequestException {
         try {
             RequestParametersUtils.transcoding(request);
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&ADD_RULE_TEMPLATE_SUCCESSFULLY}", ruleTemplateService.addRuleTemplate(request));
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
+        } catch (UnExpectedRequestException | PermissionDeniedRequestException e) {
             throw e;
         } catch (Exception e) {
-            LOGGER.error("Failed to find multi rule_template, caused by: {}", e.getMessage(), e);
+            LOGGER.error("Failed to add rule_template, caused by: {}", e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_ADD_RULE_TEMPLATE}", null);
         }
     }
@@ -169,11 +166,7 @@ public class RuleTemplateController {
         try {
             RequestParametersUtils.transcoding(request);
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&MODIFY_RULE_TEMPLATE_SUCCESSFULLY}", ruleTemplateService.modifyRuleTemplate(request));
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
+        } catch (UnExpectedRequestException | PermissionDeniedRequestException e) {
             throw e;
         } catch (Exception e) {
             LOGGER.error("Failed to modify rule_template, caused by: {}", e.getMessage(), e);
@@ -190,11 +183,7 @@ public class RuleTemplateController {
         try {
             ruleTemplateService.deleteRuleTemplate(templateId);
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&DELETE_RULE_TEMPLATE_SUCCESSFULLY}", null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
+        } catch (UnExpectedRequestException | PermissionDeniedRequestException e) {
             throw e;
         } catch (Exception e) {
             LOGGER.error("Failed to delete rule templates, caused by: {}", e.getMessage(), e);
@@ -210,18 +199,12 @@ public class RuleTemplateController {
             throws UnExpectedRequestException, PermissionDeniedRequestException {
         try {
             DeleteRuleTemplateRequest.checkRequest(request);
-            for (Long templateId : request.getRuleTemplateIdList()) {
-                ruleTemplateService.deleteRuleTemplate(templateId);
-            }
+            ruleTemplateService.deleteRuleTemplates(request.getRuleTemplateIdList());
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&DELETE_RULE_TEMPLATE_SUCCESSFULLY}", null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
+        } catch (UnExpectedRequestException | PermissionDeniedRequestException e) {
             throw e;
         } catch (Exception e) {
-            LOGGER.error("Failed to find multi rule_template, caused by: {}", e.getMessage(), e);
+            LOGGER.error("Failed to delete rule_templates, caused by: {}", e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_DELETE_RULE_TEMPLATE}", null);
         }
     }
@@ -230,14 +213,14 @@ public class RuleTemplateController {
     @Path("modify/detail/{template_id}")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<RuleTemplateResponse> getModifyRuleTemplateDetail(@PathParam("template_id") Long templateId) throws UnExpectedRequestException {
+    public GeneralResponse<RuleTemplateResponse> getModifyRuleTemplateDetail(@PathParam("template_id") Long templateId)
+            throws UnExpectedRequestException {
         try {
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_RULE_TEMPLATE_SUCCESSFULLY}", ruleTemplateService.getModifyRuleTemplateDetail(templateId));
         } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
             throw e;
         } catch (Exception e) {
-            LOGGER.error("Failed to modify rule_template, caused by: {}", e.getMessage(), e);
+            LOGGER.error("Failed to get rule_template detail, caused by: {}", e.getMessage(), e);
             return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_RULE_TEMPLATE}", null);
         }
     }

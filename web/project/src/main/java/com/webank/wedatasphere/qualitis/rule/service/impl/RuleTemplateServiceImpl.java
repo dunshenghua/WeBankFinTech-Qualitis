@@ -119,6 +119,7 @@ import javax.ws.rs.core.Context;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -249,38 +250,7 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
             newTemplate.setActionType(TemplateActionTypeEnum.SQL.getCode());
             Template savedTemplate = ruleTemplateDao.saveTemplate(newTemplate);
             LOGGER.info("Succeed to save custom template, template_id: {}", savedTemplate.getId());
-            // Generate statistics input meta by rule metric
-            //处理自动创建的指标 并赋值给RuleMetricEnCode
-            for (CustomAlarmConfigRequest customAlarmConfigRequest : request.getAlarmVariable()) {
-
-                if (StringUtils.isNotBlank(customAlarmConfigRequest.getRuleMetricName())) {
-                    Boolean flag = false;
-                    if (CollectionUtils.isNotEmpty(request.getDataSourceEnvRequests()) || CollectionUtils.isNotEmpty(request.getDataSourceEnvMappingRequests())) {
-                        flag = true;
-                    }
-
-                    RuleMetric ruleMetric = ruleMetricCommonService.accordingRuleMetricNameAdd(customAlarmConfigRequest.getRuleMetricName(), loginUser, flag);
-                    if (ruleMetric == null) {
-                        throw new UnExpectedRequestException("{&FAILED_TO_AUTOMATE_CREATE_METRICS}");
-                    } else {
-                        customAlarmConfigRequest.setRuleMetricEnCode(ruleMetric.getEnCode());
-                    }
-
-                }
-            }
-
-            Set<String> ruleMetricEnCodeSet = request.getAlarmVariable().stream().map(CustomAlarmConfigRequest::getRuleMetricEnCode).collect(Collectors.toSet());
-            Set<TemplateStatisticsInputMeta> templateStatisticsInputMetas = new HashSet<>(ruleMetricEnCodeSet.size());
-            Set<TemplateOutputMeta> templateOutputMetas = new HashSet<>(ruleMetricEnCodeSet.size());
-            for (String enCode : ruleMetricEnCodeSet) {
-                RuleMetric ruleMetricInDb = ruleMetricDao.findByEnCode(enCode);
-                templateStatisticsInputMetas.addAll(templateStatisticsInputMetaService.getAndSaveTemplateStatisticsInputMeta(
-                        ruleMetricInDb.getName(), FunctionTypeEnum.SUM_FUNCTION.getCode(), ruleMetricInDb.getName(), true, savedTemplate));
-                templateOutputMetas.addAll(templateOutputMetaService.getAndSaveTemplateOutputMeta(ruleMetricInDb.getName(),
-                        FunctionTypeEnum.SUM_FUNCTION.getCode(), true, savedTemplate, null));
-            }
-            savedTemplate.setStatisticAction(templateStatisticsInputMetas);
-            savedTemplate.setTemplateOutputMetas(templateOutputMetas);
+            processAlarmVariablesAndBuildMetas(request, savedTemplate, loginUser);
             return savedTemplate;
         } else {
             newTemplate.setMidTableAction(getMidTableAction(request));
@@ -314,37 +284,7 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
             LOGGER.info("Template start to modify entity.");
             Template savedTemplate = ruleTemplateDao.saveTemplate(template);
             LOGGER.info("Succeed to modify custom template, template id: {}", savedTemplate.getId());
-            // Generate statistics input meta by rule metric
-            //处理自动创建的指标 并赋值给RuleMetricEnCode
-            for (CustomAlarmConfigRequest customAlarmConfigRequest : request.getAlarmVariable()) {
-
-                if (StringUtils.isNotBlank(customAlarmConfigRequest.getRuleMetricName())) {
-                    Boolean flag = false;
-                    if (CollectionUtils.isNotEmpty(request.getDataSourceEnvRequests()) || CollectionUtils.isNotEmpty(request.getDataSourceEnvMappingRequests())) {
-                        flag = true;
-                    }
-                    RuleMetric ruleMetric = ruleMetricCommonService.accordingRuleMetricNameAdd(customAlarmConfigRequest.getRuleMetricName(), loginUser, flag);
-                    if (ruleMetric == null) {
-                        throw new UnExpectedRequestException("{&FAILED_TO_AUTOMATE_CREATE_METRICS}");
-                    } else {
-                        customAlarmConfigRequest.setRuleMetricEnCode(ruleMetric.getEnCode());
-                    }
-
-                }
-            }
-
-            Set<String> ruleMetricEnCodeSet = request.getAlarmVariable().stream().map(CustomAlarmConfigRequest::getRuleMetricEnCode).collect(Collectors.toSet());
-            Set<TemplateStatisticsInputMeta> templateStatisticsInputMetas = new HashSet<>(ruleMetricEnCodeSet.size());
-            Set<TemplateOutputMeta> templateOutputMetas = new HashSet<>(ruleMetricEnCodeSet.size());
-            for (String enCode : ruleMetricEnCodeSet) {
-                RuleMetric ruleMetricInDb = ruleMetricDao.findByEnCode(enCode);
-                templateStatisticsInputMetas.addAll(templateStatisticsInputMetaService.getAndSaveTemplateStatisticsInputMeta(
-                        ruleMetricInDb.getName(), FunctionTypeEnum.SUM_FUNCTION.getCode(), ruleMetricInDb.getName(), true, savedTemplate));
-                templateOutputMetas.addAll(templateOutputMetaService.getAndSaveTemplateOutputMeta(ruleMetricInDb.getName(),
-                        FunctionTypeEnum.SUM_FUNCTION.getCode(), true, savedTemplate, null));
-            }
-            savedTemplate.setStatisticAction(templateStatisticsInputMetas);
-            savedTemplate.setTemplateOutputMetas(templateOutputMetas);
+            processAlarmVariablesAndBuildMetas(request, savedTemplate, loginUser);
             return savedTemplate;
         } else {
             template.setMidTableAction(getMidTableAction(request));
@@ -386,39 +326,17 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
             throw new UnExpectedRequestException("Illegal parameter: data_source_type");
         }
 
-        List<Template> templates;
-        long total = 0;
-        User userInDb;
-        if (StringUtils.isNotBlank(request.getUserName())) {
-            userInDb = userDao.findByUsername(request.getUserName());
-        } else {
-            userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-        }
-        if (userInDb == null) {
-            throw new UnExpectedRequestException("User name {&REQUEST_CAN_NOT_BE_NULL}");
-        }
-
+        UserRoleContext ctx = resolveUserAndRole(request.getUserName());
         Set<String> actionRangeSet = CollectionUtils.isEmpty(request.getActionRange()) ? null : request.getActionRange();
 
-        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-        Integer roleType = roleService.getRoleType(userRoles);
-        if (roleType.equals(RoleSystemTypeEnum.ADMIN.getCode())) {
+        List<Template> templates;
+        long total;
+        if (ctx.roleType.equals(RoleSystemTypeEnum.ADMIN.getCode())) {
             templates = ruleTemplateDao.findAllDefaultTemplate(request.getPage(), request.getSize(), request.getTemplateType(), request.getCnName(), request.getEnName(), dataSourceTypeCode, request.getVerificationLevel(), request.getVerificationType(), request.getCreateName(), request.getModifyName(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, TableDataTypeEnum.RULE_TEMPLATE.getCode());
             total = ruleTemplateDao.countAllDefaultTemplate(request.getTemplateType(), request.getCnName(), request.getEnName(), dataSourceTypeCode, request.getVerificationLevel(), request.getVerificationType(), request.getCreateName(), request.getModifyName(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, TableDataTypeEnum.RULE_TEMPLATE.getCode());
-
-        } else if (roleType.equals(RoleSystemTypeEnum.DEPARTMENT_ADMIN.getCode())) {
-            List<Long> departmentIds = userRoles.stream().map(UserRole::getRole).filter(Objects::nonNull)
-                    .map(Role::getDepartment).filter(Objects::nonNull)
-                    .map(Department::getId).collect(Collectors.toList());
-            if (Objects.nonNull(userInDb.getDepartment())) {
-                departmentIds.add(userInDb.getDepartment().getId());
-            }
-            List<Long> devAndOpsInfoWithDeptList = subDepartmentPermissionService.getSubDepartmentIdList(departmentIds);
-            Page<Template> resultPage = ruleTemplateDao.findTemplates(request.getTemplateType(), dataSourceTypeCode, TableDataTypeEnum.RULE_TEMPLATE.getCode(), devAndOpsInfoWithDeptList.isEmpty() ? null : devAndOpsInfoWithDeptList, userInDb.getId(), request.getCnName(), request.getEnName(), request.getVerificationLevel(), request.getVerificationType(), request.getCreateName(), request.getModifyName(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, request.getCreateStartTime(), request.getCreateEndTime(), request.getModifyStartTime(), request.getModifyEndTime(), request.getTemplateId(), request.getDescription(), request.getPage(), request.getSize());
-            templates = resultPage.getContent();
-            total = resultPage.getTotalElements();
         } else {
-            Page<Template> resultPage = ruleTemplateDao.findTemplates(request.getTemplateType(), dataSourceTypeCode, TableDataTypeEnum.RULE_TEMPLATE.getCode(), Arrays.asList(userInDb.getSubDepartmentCode()), userInDb.getId(), request.getCnName(), request.getEnName(), request.getVerificationLevel(), request.getVerificationType(), request.getCreateName(), request.getModifyName(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, request.getCreateStartTime(), request.getCreateEndTime(), request.getModifyStartTime(), request.getModifyEndTime(), request.getTemplateId(), request.getDescription(), request.getPage(), request.getSize());
+            List<Long> departmentScope = resolveDepartmentScope(ctx);
+            Page<Template> resultPage = ruleTemplateDao.findTemplates(request.getTemplateType(), dataSourceTypeCode, TableDataTypeEnum.RULE_TEMPLATE.getCode(), departmentScope.isEmpty() ? null : departmentScope, ctx.user.getId(), request.getCnName(), request.getEnName(), request.getVerificationLevel(), request.getVerificationType(), request.getCreateName(), request.getModifyName(), request.getDevDepartmentId(), request.getOpsDepartmentId(), actionRangeSet, request.getCreateStartTime(), request.getCreateEndTime(), request.getModifyStartTime(), request.getModifyEndTime(), request.getTemplateId(), request.getDescription(), request.getPage(), request.getSize());
             templates = resultPage.getContent();
             total = resultPage.getTotalElements();
         }
@@ -469,18 +387,7 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
 
     @Override
     public GeneralResponse<TemplateMetaResponse> getRuleTemplateMeta(Long ruleTemplateId) throws UnExpectedRequestException {
-        // Find rule template by id
-        Template templateInDb = ruleTemplateDao.findById(ruleTemplateId);
-        if (null == templateInDb) {
-            throw new UnExpectedRequestException("rule_template_id {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-
-        // Find input meta data by template
-        List<TemplateOutputMeta> templateOutputMetas = templateOutputMetaDao.findByRuleTemplate(templateInDb);
-        List<Integer> types = templateDataSourceTypeDao.findByTemplate(templateInDb).stream().map(TemplateDataSourceType::getDataSourceTypeId).collect(
-                Collectors.toList());
-        TemplateMetaResponse response = new TemplateMetaResponse(templateInDb, templateOutputMetas, types);
-
+        TemplateMetaResponse response = buildTemplateMetaResponse(ruleTemplateId);
         LOGGER.info("Succeed to get rule_template. rule_template_id: {}", ruleTemplateId);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_RULE_TEMPLATE_META_SUCCESSFULLY}", response);
     }
@@ -638,18 +545,7 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
      */
     @Override
     public GeneralResponse<TemplateMetaResponse> getRuleMultiTemplateMeta(Long ruleTemplateId) throws UnExpectedRequestException {
-        // Find rule template by rule template id
-        Template templateInDb = ruleTemplateDao.findById(ruleTemplateId);
-        if (null == templateInDb) {
-            throw new UnExpectedRequestException("rule_template_id {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-
-        // Find meta data of template
-        List<TemplateOutputMeta> templateOutputMetas = templateOutputMetaDao.findByRuleTemplate(templateInDb);
-        List<Integer> types = templateDataSourceTypeDao.findByTemplate(templateInDb).stream().map(TemplateDataSourceType::getDataSourceTypeId).collect(
-                Collectors.toList());
-        TemplateMetaResponse response = new TemplateMetaResponse(templateInDb, templateOutputMetas, types);
-
+        TemplateMetaResponse response = buildTemplateMetaResponse(ruleTemplateId);
         LOGGER.info("Succeed to get rule_template, rule template id: {}", ruleTemplateId);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_RULE_TEMPLATE_META_SUCCESSFULLY}", response);
     }
@@ -661,21 +557,10 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
         AddRuleTemplateRequest.checkRequest(request);
         LOGGER.info("Add default rule template request detail: {}", request.toString());
 
-        //集群、数据库、数据表
+        UserRoleContext ctx = resolveCurrentUserAndRole();
+        boolean allVisibility = hasAllDepartmentVisibility(request.getVisibilityDepartmentList());
+        subDepartmentPermissionService.checkEditablePermission(ctx.roleType, ctx.user, null, request.getDevDepartmentId(), request.getOpsDepartmentId(), allVisibility);
 
-        // Check user info.
-        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-        Integer roleType = roleService.getRoleType(userRoles);
-
-        List<DepartmentSubInfoRequest> dataVisibilityList = request.getVisibilityDepartmentList();
-        boolean allVisibility = false;
-        if (CollectionUtils.isNotEmpty(dataVisibilityList)) {
-            allVisibility = dataVisibilityList.stream().map(DepartmentSubInfoRequest::getId).anyMatch(ALL_DEPARTMENT_VISIBILITY::equals);
-        }
-        subDepartmentPermissionService.checkEditablePermission(roleType, userInDb, null, request.getDevDepartmentId(), request.getOpsDepartmentId(), allVisibility);
-
-        // Save template.
         String nowDate = RuleTemplateServiceImpl.PRINT_TIME_FORMAT.format(new Date());
         checkTemplateName(request.getTemplateName());
         if (StringUtils.isNotBlank(request.getEnName())) {
@@ -683,63 +568,28 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
         }
 
         Template newTemplate = new Template();
-        newTemplate.setName(request.getTemplateName());
         newTemplate.setClusterNum(-1);
         newTemplate.setDbNum(-1);
         newTemplate.setTableNum(-1);
         newTemplate.setFieldNum(-1);
-        newTemplate.setActionType(request.getActionType());
-        newTemplate.setMidTableAction(request.getMidTableAction());
-
-        if (StringUtils.isNotBlank(request.getCountFunctionName())) {
-            String value = "";
-
-            if (FunctionTypeEnum.COUNT_FUNCTION.getFunction().equals(request.getCountFunctionName())) {
-                value = "*";
-            } else if (StringUtils.isNotBlank(request.getCountFunctioAlias())) {
-                value = request.getCountFunctioAlias();
-            }
-            newTemplate.setShowSql(request.getMidTableAction().replaceFirst(QualitisConstants.ASTERISK, request.getCountFunctionName() + "(" + value + ")"));
-        }
-
-        newTemplate.setTemplateType(request.getTemplateType());
         newTemplate.setImportExportName(UuidGenerator.generate());
-        newTemplate.setDevDepartmentName(request.getDevDepartmentName());
-        newTemplate.setOpsDepartmentName(request.getOpsDepartmentName());
-        newTemplate.setDevDepartmentId(request.getDevDepartmentId());
-        newTemplate.setOpsDepartmentId(request.getOpsDepartmentId());
-        newTemplate.setCreateUser(userInDb);
+        newTemplate.setCreateUser(ctx.user);
         newTemplate.setCreateTime(nowDate);
-
-        newTemplate.setEnName(request.getEnName());
-        newTemplate.setDescription(request.getDescription());
-        newTemplate.setVerificationLevel(request.getVerificationLevel());
-        newTemplate.setVerificationType(request.getVerificationType());
-        newTemplate.setSaveMidTable(request.getSaveMidTable() != null ? request.getSaveMidTable() : false);
-        newTemplate.setFilterFields(request.getFilterFields() != null ? request.getFilterFields() : false);
-        newTemplate.setWhetherUsingFunctions(request.getWhetherUsingFunctions() != null ? request.getWhetherUsingFunctions() : false);
-        newTemplate.setVerificationCnName(request.getVerificationCnName());
-        newTemplate.setVerificationEnName(request.getVerificationEnName());
-        newTemplate.setNamingMethod(request.getNamingMethod());
-        newTemplate.setWhetherSolidification(request.getWhetherSolidification() != null ? request.getWhetherSolidification() : false);
-        newTemplate.setCheckTemplate(request.getCheckTemplate());
-        newTemplate.setMajorType(request.getMajorType());
-        newTemplate.setTemplateNumber(request.getTemplateNumber());
-        newTemplate.setCustomZhCode(request.getCustomZhCode());
+        populateTemplateFromRequest(newTemplate, request);
 
         Template savedTemplate = ruleTemplateDao.saveTemplate(newTemplate);
 
         batchHandleFunctionAndFields(savedTemplate, request.getUdfFunctionName());
 
-        for (Integer type : request.getDatasourceType()) {
-            TemplateDataSourceType templateDataSourceType = new TemplateDataSourceType(type, savedTemplate);
-            templateDataSourceTypeDao.save(templateDataSourceType);
+        if (CollectionUtils.isNotEmpty(request.getDatasourceType())) {
+            for (Integer type : request.getDatasourceType()) {
+                TemplateDataSourceType templateDataSourceType = new TemplateDataSourceType(type, savedTemplate);
+                templateDataSourceTypeDao.save(templateDataSourceType);
+            }
         }
         LOGGER.info("Succeed to save rule template, template_id: {}", savedTemplate.getId());
-        // Save template info.
         createAndSaveTemplateInfo(savedTemplate, request);
 
-//        Save data visibility
         RuleTemplateResponse ruleTemplateResponse = new RuleTemplateResponse(savedTemplate, false);
         List<DepartmentSubInfoResponse> departmentInfoResponses = dataVisibilityService.saveBatch(savedTemplate.getId(), TableDataTypeEnum.RULE_TEMPLATE, request.getVisibilityDepartmentList());
         ruleTemplateResponse.setVisibilityDepartmentNameList(departmentInfoResponses);
@@ -903,103 +753,50 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
         AddRuleTemplateRequest addRuleTemplateRequest = ModifyRuleTemplateRequest.checkRequest(request);
         LOGGER.info("modify default rule template request detail: {}", request.toString());
 
-        // Check template existence
         Template templateInDb = checkRuleTemplate(request.getTemplateId());
 
-        //checkExistRuleByTemplate(templateInDb);
-
-        // Check user info.
-        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-        Integer roleType = roleService.getRoleType(userRoles);
-
-        List<DepartmentSubInfoRequest> dataVisibilityList = request.getVisibilityDepartmentNameList();
-        boolean allVisibility = false;
-        if (CollectionUtils.isNotEmpty(dataVisibilityList)) {
-            allVisibility = dataVisibilityList.stream().map(DepartmentSubInfoRequest::getId).anyMatch(ALL_DEPARTMENT_VISIBILITY::equals);
-        }
-
+        UserRoleContext ctx = resolveCurrentUserAndRole();
+        boolean allVisibility = hasAllDepartmentVisibility(request.getVisibilityDepartmentNameList());
         String createUser = Objects.nonNull(templateInDb.getCreateUser()) ? templateInDb.getCreateUser().getUsername() : null;
-        subDepartmentPermissionService.checkEditablePermission(roleType, userInDb, createUser, request.getDevDepartmentId(), request.getOpsDepartmentId(), allVisibility);
+        subDepartmentPermissionService.checkEditablePermission(ctx.roleType, ctx.user, createUser, request.getDevDepartmentId(), request.getOpsDepartmentId(), allVisibility);
 
-        // Check rules of template
         ruleService.checkRuleOfTemplate(templateInDb);
 
-        // delete output meta
+        // Delete old meta data
         templateOutputMetaService.deleteByTemplate(templateInDb);
-        // delete mid_table input meta
         templateMidTableInputMetaService.deleteByTemplate(templateInDb);
-        // delete statistics input meta
         templateStatisticsInputMetaService.deleteByTemplate(templateInDb);
-        // delete template type relationship
         templateDataSourceTypeDao.deleteByTemplate(templateInDb);
-        // delete Udf Function
         templateUdfDao.deleteByTemplate(templateInDb);
 
-        // Save template.
+        // Check name uniqueness
         if (!templateInDb.getName().equals(request.getTemplateName())) {
             checkTemplateName(request.getTemplateName());
         }
-        //enName
-        if (!templateInDb.getEnName().equals(request.getEnName()) && StringUtils.isNotBlank(request.getEnName())) {
+        if (StringUtils.isNotBlank(request.getEnName()) && !request.getEnName().equals(templateInDb.getEnName())) {
             checkTemplateEnName(request.getEnName());
         }
 
         String nowDate = RuleTemplateServiceImpl.PRINT_TIME_FORMAT.format(new Date());
-        templateInDb.setName(request.getTemplateName());
-        templateInDb.setActionType(request.getActionType());
-
-        templateInDb.setMidTableAction(request.getMidTableAction());
-        templateInDb.setSaveMidTable(request.getSaveMidTable());
-        if (StringUtils.isNotBlank(request.getCountFunctionName())) {
-            String value = "";
-
-            if (FunctionTypeEnum.COUNT_FUNCTION.getFunction().equals(request.getCountFunctionName())) {
-                value = "*";
-            } else if (StringUtils.isNotBlank(request.getCountFunctioAlias())) {
-                value = request.getCountFunctioAlias();
-            }
-            templateInDb.setShowSql(request.getMidTableAction().replaceFirst(QualitisConstants.ASTERISK, request.getCountFunctionName() + "(" + value + ")"));
-        }
-        templateInDb.setTemplateType(request.getTemplateType());
-        templateInDb.setModifyUser(userInDb);
+        templateInDb.setModifyUser(ctx.user);
         templateInDb.setModifyTime(nowDate);
-        templateInDb.setDevDepartmentName(request.getDevDepartmentName());
-        templateInDb.setOpsDepartmentName(request.getOpsDepartmentName());
-        templateInDb.setDevDepartmentId(request.getDevDepartmentId());
-        templateInDb.setOpsDepartmentId(request.getOpsDepartmentId());
-
-        templateInDb.setEnName(request.getEnName());
-        templateInDb.setDescription(request.getDescription());
-        templateInDb.setVerificationLevel(request.getVerificationLevel());
-        templateInDb.setVerificationType(request.getVerificationType());
-        templateInDb.setSaveMidTable(request.getSaveMidTable() != null ? request.getSaveMidTable() : false);
-        templateInDb.setFilterFields(request.getFilterFields() != null ? request.getFilterFields() : false);
-        templateInDb.setWhetherUsingFunctions(request.getWhetherUsingFunctions() != null ? request.getWhetherUsingFunctions() : false);
-        templateInDb.setVerificationCnName(request.getVerificationCnName());
-        templateInDb.setVerificationEnName(request.getVerificationEnName());
-        templateInDb.setNamingMethod(request.getNamingMethod());
-        templateInDb.setWhetherSolidification(request.getWhetherSolidification() != null ? request.getWhetherSolidification() : false);
-        templateInDb.setCheckTemplate(request.getCheckTemplate());
-        templateInDb.setMajorType(request.getMajorType());
-        templateInDb.setTemplateNumber(request.getTemplateNumber());
-        templateInDb.setCustomZhCode(request.getCustomZhCode());
+        populateTemplateFromRequest(templateInDb, request);
 
         Template savedTemplate = ruleTemplateDao.saveTemplate(templateInDb);
         List<TemplateDataSourceType> templateDataSourceTypes = templateDataSourceTypeDao.findByTemplate(savedTemplate);
         List<Integer> templateDataSourceTypeIntegers = templateDataSourceTypes.stream().map(TemplateDataSourceType::getDataSourceTypeId).collect(Collectors.toList());
-        for (Integer type : request.getDatasourceType()) {
-            if (!templateDataSourceTypeIntegers.contains(type)) {
-                TemplateDataSourceType templateDataSourceType = new TemplateDataSourceType(type, savedTemplate);
-                templateDataSourceTypeDao.save(templateDataSourceType);
+        if (CollectionUtils.isNotEmpty(request.getDatasourceType())) {
+            for (Integer type : request.getDatasourceType()) {
+                if (!templateDataSourceTypeIntegers.contains(type)) {
+                    TemplateDataSourceType templateDataSourceType = new TemplateDataSourceType(type, savedTemplate);
+                    templateDataSourceTypeDao.save(templateDataSourceType);
+                }
             }
-
         }
 
         batchHandleFunctionAndFields(savedTemplate, request.getUdfFunctionName());
 
         LOGGER.info("Succeed to save rule template, template_id: {}", savedTemplate.getId());
-        // Save template info.
         createAndSaveTemplateInfo(savedTemplate, addRuleTemplateRequest);
         RuleTemplateResponse ruleTemplateResponse = new RuleTemplateResponse(savedTemplate, false);
         dataVisibilityService.delete(savedTemplate.getId(), TableDataTypeEnum.RULE_TEMPLATE);
@@ -1025,26 +822,16 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
     @Override
     public void deleteRuleTemplate(Long templateId) throws UnExpectedRequestException, PermissionDeniedRequestException {
         LOGGER.info("delete rule template request detail: {}", templateId);
-        // Check template existence
         Template templateInDb = checkRuleTemplate(templateId);
-
         checkExistRuleByTemplate(templateInDb);
-        // Check operator permission
-        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-        Integer roleType = roleService.getRoleType(userRoles);
 
+        UserRoleContext ctx = resolveCurrentUserAndRole();
         List<DataVisibility> dataVisibilityList = dataVisibilityService.filter(templateId, TableDataTypeEnum.RULE_TEMPLATE);
-        boolean allVisibility = false;
-        if (CollectionUtils.isNotEmpty(dataVisibilityList)) {
-            allVisibility = dataVisibilityList.stream().map(DataVisibility::getDepartmentSubId).anyMatch(ALL_DEPARTMENT_VISIBILITY::equals);
-        }
+        boolean allVisibility = hasAllDepartmentVisibilityFromEntities(dataVisibilityList);
         String createUser = Objects.nonNull(templateInDb.getCreateUser()) ? templateInDb.getCreateUser().getUsername() : null;
-        subDepartmentPermissionService.checkEditablePermission(roleType, userInDb, createUser, templateInDb.getDevDepartmentId(), templateInDb.getOpsDepartmentId(), allVisibility);
+        subDepartmentPermissionService.checkEditablePermission(ctx.roleType, ctx.user, createUser, templateInDb.getDevDepartmentId(), templateInDb.getOpsDepartmentId(), allVisibility);
 
-        // Check rules of template
         ruleService.checkRuleOfTemplate(templateInDb);
-        // Delete 'Templatedepartment' or 'TemplateUser'
         clearTemplateUser(templateInDb);
 
         List<TemplateDataSourceType> templateDataSourceTypes = templateDataSourceTypeDao.findByTemplate(templateInDb);
@@ -1053,8 +840,15 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
         }
 
         ruleTemplateDao.deleteTemplate(templateInDb);
-
         dataVisibilityService.delete(templateInDb.getId(), TableDataTypeEnum.RULE_TEMPLATE);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void deleteRuleTemplates(List<Long> templateIds) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        for (Long templateId : templateIds) {
+            deleteRuleTemplate(templateId);
+        }
     }
 
     @Override
@@ -1101,41 +895,47 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
         List<TemplateOutputMetaResponse> outputMetaResponses = new ArrayList<>(1);
         List<TemplateMidTableInputMetaResponse> midTableInputMetaResponses = new ArrayList<>(2);
         List<TemplateStatisticsInputMetaResponse> statisticsInputMetaResponses = new ArrayList<>(1);
-        for (TemplateOutputMeta templateOutputMeta : templateInDb.getTemplateOutputMetas()) {
-            TemplateOutputMetaResponse templateOutputMetaResponse = new TemplateOutputMetaResponse();
-            templateOutputMetaResponse.setOutputName(templateOutputMeta.getOutputName());
-            outputMetaResponses.add(templateOutputMetaResponse);
+        if (CollectionUtils.isNotEmpty(templateInDb.getTemplateOutputMetas())) {
+            for (TemplateOutputMeta templateOutputMeta : templateInDb.getTemplateOutputMetas()) {
+                TemplateOutputMetaResponse templateOutputMetaResponse = new TemplateOutputMetaResponse();
+                templateOutputMetaResponse.setOutputName(templateOutputMeta.getOutputName());
+                outputMetaResponses.add(templateOutputMetaResponse);
+            }
         }
         response.setTemplateOutputMetaResponses(outputMetaResponses);
 
-        for (TemplateMidTableInputMeta templateMidTableInputMeta : templateInDb.getTemplateMidTableInputMetas()) {
-            boolean present = QualitisConstants.ELIMINATE_PLACEHOLDER.stream().filter(item -> item.equals(templateMidTableInputMeta.getInputType())).findAny().isPresent();
-            if (Boolean.TRUE.equals(present)) {
-                continue;
+        if (CollectionUtils.isNotEmpty(templateInDb.getTemplateMidTableInputMetas())) {
+            for (TemplateMidTableInputMeta templateMidTableInputMeta : templateInDb.getTemplateMidTableInputMetas()) {
+                boolean present = QualitisConstants.ELIMINATE_PLACEHOLDER.stream().filter(item -> item.equals(templateMidTableInputMeta.getInputType())).findAny().isPresent();
+                if (Boolean.TRUE.equals(present)) {
+                    continue;
+                }
+                TemplateMidTableInputMetaResponse templateMidTableInputMetaResponse = new TemplateMidTableInputMetaResponse();
+                templateMidTableInputMetaResponse.setMidTableInputId(templateMidTableInputMeta.getId());
+                templateMidTableInputMetaResponse.setName(templateMidTableInputMeta.getName());
+                templateMidTableInputMetaResponse.setPlaceholder(templateMidTableInputMeta.getPlaceholder());
+                templateMidTableInputMetaResponse.setPlaceholderDescription(templateMidTableInputMeta.getPlaceholderDescription());
+                templateMidTableInputMetaResponse.setInputType(templateMidTableInputMeta.getInputType());
+                templateMidTableInputMetaResponse.setCnName(templateMidTableInputMeta.getCnName());
+                templateMidTableInputMetaResponse.setEnName(templateMidTableInputMeta.getEnName());
+                templateMidTableInputMetaResponse.setCnDescription(templateMidTableInputMeta.getCnDescription());
+                templateMidTableInputMetaResponse.setEnDescription(templateMidTableInputMeta.getEnDescription());
+                templateMidTableInputMetaResponse.setFieldMultipleChoice(templateMidTableInputMeta.getFieldMultipleChoice());
+                templateMidTableInputMetaResponse.setWhetherStandardValue(templateMidTableInputMeta.getWhetherStandardValue());
+                templateMidTableInputMetaResponse.setWhetherNewValue(templateMidTableInputMeta.getWhetherNewValue());
+                midTableInputMetaResponses.add(templateMidTableInputMetaResponse);
             }
-            TemplateMidTableInputMetaResponse templateMidTableInputMetaResponse = new TemplateMidTableInputMetaResponse();
-            templateMidTableInputMetaResponse.setMidTableInputId(templateMidTableInputMeta.getId());
-            templateMidTableInputMetaResponse.setName(templateMidTableInputMeta.getName());
-            templateMidTableInputMetaResponse.setPlaceholder(templateMidTableInputMeta.getPlaceholder());
-            templateMidTableInputMetaResponse.setPlaceholderDescription(templateMidTableInputMeta.getPlaceholderDescription());
-            templateMidTableInputMetaResponse.setInputType(templateMidTableInputMeta.getInputType());
-            templateMidTableInputMetaResponse.setCnName(templateMidTableInputMeta.getCnName());
-            templateMidTableInputMetaResponse.setEnName(templateMidTableInputMeta.getEnName());
-            templateMidTableInputMetaResponse.setCnDescription(templateMidTableInputMeta.getCnDescription());
-            templateMidTableInputMetaResponse.setEnDescription(templateMidTableInputMeta.getEnDescription());
-            templateMidTableInputMetaResponse.setFieldMultipleChoice(templateMidTableInputMeta.getFieldMultipleChoice());
-            templateMidTableInputMetaResponse.setWhetherStandardValue(templateMidTableInputMeta.getWhetherStandardValue());
-            templateMidTableInputMetaResponse.setWhetherNewValue(templateMidTableInputMeta.getWhetherNewValue());
-            midTableInputMetaResponses.add(templateMidTableInputMetaResponse);
         }
         response.setTemplateMidTableInputMetaResponses(midTableInputMetaResponses);
-        for (TemplateStatisticsInputMeta templateStatisticsInputMeta : templateInDb.getStatisticAction()) {
+        if (CollectionUtils.isNotEmpty(templateInDb.getStatisticAction())) {
+            for (TemplateStatisticsInputMeta templateStatisticsInputMeta : templateInDb.getStatisticAction()) {
             TemplateStatisticsInputMetaResponse templateStatisticsInputMetaResponse = new TemplateStatisticsInputMetaResponse();
             templateStatisticsInputMetaResponse.setName(templateStatisticsInputMeta.getName());
             templateStatisticsInputMetaResponse.setFuncName(templateStatisticsInputMeta.getFuncName());
             templateStatisticsInputMetaResponse.setValue(templateStatisticsInputMeta.getValue());
             templateStatisticsInputMetaResponse.setValueType(templateStatisticsInputMeta.getValueType());
             statisticsInputMetaResponses.add(templateStatisticsInputMetaResponse);
+            }
         }
         response.setTemplateStatisticsInputMetaResponses(statisticsInputMetaResponses);
 
@@ -1172,24 +972,15 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
 
     @Override
     public List<Map<String, Object>> getTemplateOptionList(Integer templateType) throws UnExpectedRequestException {
-        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-        Integer roleType = roleService.getRoleType(userRoles);
-        RoleSystemTypeEnum roleSystemTypeEnum = RoleSystemTypeEnum.fromCode(roleType);
+        UserRoleContext ctx = resolveCurrentUserAndRole();
+        RoleSystemTypeEnum roleSystemTypeEnum = RoleSystemTypeEnum.fromCode(ctx.roleType);
         switch (roleSystemTypeEnum) {
             case ADMIN:
                 return ruleTemplateDao.findAllTemplatesOptionList(templateType);
             case DEPARTMENT_ADMIN:
-                List<Long> departmentIds = userRoles.stream().map(UserRole::getRole).filter(Objects::nonNull)
-                        .map(Role::getDepartment).filter(Objects::nonNull)
-                        .map(Department::getId).collect(Collectors.toList());
-                if (Objects.nonNull(userInDb.getDepartment())) {
-                    departmentIds.add(userInDb.getDepartment().getId());
-                }
-                List<Long> devAndOpsInfoWithDeptList = subDepartmentPermissionService.getSubDepartmentIdList(departmentIds);
-                return ruleTemplateDao.findTemplatesOptionList(TableDataTypeEnum.RULE_TEMPLATE.getCode(), devAndOpsInfoWithDeptList, userInDb, templateType);
             default:
-                return ruleTemplateDao.findTemplatesOptionList(TableDataTypeEnum.RULE_TEMPLATE.getCode(), Arrays.asList(userInDb.getSubDepartmentCode()), userInDb, templateType);
+                List<Long> departmentScope = resolveDepartmentScope(ctx);
+                return ruleTemplateDao.findTemplatesOptionList(TableDataTypeEnum.RULE_TEMPLATE.getCode(), departmentScope, ctx.user, templateType);
         }
     }
 
@@ -1298,6 +1089,158 @@ public class RuleTemplateServiceImpl implements RuleTemplateService {
         }
 
         return collectList;
+    }
+
+    // ==================== Extracted Helper Methods ====================
+
+    private static class UserRoleContext {
+        final User user;
+        final List<UserRole> userRoles;
+        final Integer roleType;
+
+        UserRoleContext(User user, List<UserRole> userRoles, Integer roleType) {
+            this.user = user;
+            this.userRoles = userRoles;
+            this.roleType = roleType;
+        }
+    }
+
+    private UserRoleContext resolveCurrentUserAndRole() throws UnExpectedRequestException {
+        return resolveUserAndRole(null);
+    }
+
+    private UserRoleContext resolveUserAndRole(String userName) throws UnExpectedRequestException {
+        User user;
+        if (StringUtils.isNotBlank(userName)) {
+            user = userDao.findByUsername(userName);
+        } else {
+            user = userDao.findById(HttpUtils.getUserId(httpServletRequest));
+        }
+        if (user == null) {
+            throw new UnExpectedRequestException("User {&DOES_NOT_EXIST}");
+        }
+        List<UserRole> userRoles = userRoleDao.findByUser(user);
+        Integer roleType = roleService.getRoleType(userRoles);
+        return new UserRoleContext(user, userRoles, roleType);
+    }
+
+    private boolean hasAllDepartmentVisibility(List<DepartmentSubInfoRequest> visibilityList) {
+        if (CollectionUtils.isEmpty(visibilityList)) {
+            return false;
+        }
+        return visibilityList.stream()
+                .map(DepartmentSubInfoRequest::getId)
+                .anyMatch(ALL_DEPARTMENT_VISIBILITY::equals);
+    }
+
+    private boolean hasAllDepartmentVisibilityFromEntities(List<DataVisibility> visibilityList) {
+        if (CollectionUtils.isEmpty(visibilityList)) {
+            return false;
+        }
+        return visibilityList.stream()
+                .map(DataVisibility::getDepartmentSubId)
+                .anyMatch(ALL_DEPARTMENT_VISIBILITY::equals);
+    }
+
+    private static String buildShowSql(String midTableAction, String countFunctionName, String countFunctionAlias) {
+        if (StringUtils.isBlank(countFunctionName)) {
+            return null;
+        }
+        String value = "";
+        if (FunctionTypeEnum.COUNT_FUNCTION.getFunction().equals(countFunctionName)) {
+            value = "*";
+        } else if (StringUtils.isNotBlank(countFunctionAlias)) {
+            value = countFunctionAlias;
+        }
+        return midTableAction.replaceFirst(QualitisConstants.ASTERISK, countFunctionName + "(" + value + ")");
+    }
+
+    private void populateTemplateFromRequest(Template template, AddRuleTemplateRequest request) {
+        template.setName(request.getTemplateName());
+        template.setActionType(request.getActionType());
+        template.setMidTableAction(request.getMidTableAction());
+        template.setTemplateType(request.getTemplateType());
+        template.setDevDepartmentName(request.getDevDepartmentName());
+        template.setOpsDepartmentName(request.getOpsDepartmentName());
+        template.setDevDepartmentId(request.getDevDepartmentId());
+        template.setOpsDepartmentId(request.getOpsDepartmentId());
+        template.setEnName(request.getEnName());
+        template.setDescription(request.getDescription());
+        template.setVerificationLevel(request.getVerificationLevel());
+        template.setVerificationType(request.getVerificationType());
+        template.setSaveMidTable(request.getSaveMidTable() != null ? request.getSaveMidTable() : false);
+        template.setFilterFields(request.getFilterFields() != null ? request.getFilterFields() : false);
+        template.setWhetherUsingFunctions(request.getWhetherUsingFunctions() != null ? request.getWhetherUsingFunctions() : false);
+        template.setVerificationCnName(request.getVerificationCnName());
+        template.setVerificationEnName(request.getVerificationEnName());
+        template.setNamingMethod(request.getNamingMethod());
+        template.setWhetherSolidification(request.getWhetherSolidification() != null ? request.getWhetherSolidification() : false);
+        template.setCheckTemplate(request.getCheckTemplate());
+        template.setMajorType(request.getMajorType());
+        template.setTemplateNumber(request.getTemplateNumber());
+        template.setCustomZhCode(request.getCustomZhCode());
+
+        String showSql = buildShowSql(request.getMidTableAction(), request.getCountFunctionName(), request.getCountFunctioAlias());
+        if (showSql != null) {
+            template.setShowSql(showSql);
+        }
+    }
+
+    private void processAlarmVariablesAndBuildMetas(AddCustomRuleRequest request, Template savedTemplate, String loginUser)
+            throws UnExpectedRequestException, PermissionDeniedRequestException {
+        for (CustomAlarmConfigRequest customAlarmConfigRequest : request.getAlarmVariable()) {
+            if (StringUtils.isNotBlank(customAlarmConfigRequest.getRuleMetricName())) {
+                boolean flag = CollectionUtils.isNotEmpty(request.getDataSourceEnvRequests())
+                        || CollectionUtils.isNotEmpty(request.getDataSourceEnvMappingRequests());
+                RuleMetric ruleMetric = ruleMetricCommonService.accordingRuleMetricNameAdd(
+                        customAlarmConfigRequest.getRuleMetricName(), loginUser, flag);
+                if (ruleMetric == null) {
+                    throw new UnExpectedRequestException("{&FAILED_TO_AUTOMATE_CREATE_METRICS}");
+                }
+                customAlarmConfigRequest.setRuleMetricEnCode(ruleMetric.getEnCode());
+            }
+        }
+
+        Set<String> ruleMetricEnCodeSet = request.getAlarmVariable().stream()
+                .map(CustomAlarmConfigRequest::getRuleMetricEnCode).collect(Collectors.toSet());
+        Set<TemplateStatisticsInputMeta> templateStatisticsInputMetas = new HashSet<>(ruleMetricEnCodeSet.size());
+        Set<TemplateOutputMeta> templateOutputMetas = new HashSet<>(ruleMetricEnCodeSet.size());
+        for (String enCode : ruleMetricEnCodeSet) {
+            RuleMetric ruleMetricInDb = ruleMetricDao.findByEnCode(enCode);
+            templateStatisticsInputMetas.addAll(templateStatisticsInputMetaService.getAndSaveTemplateStatisticsInputMeta(
+                    ruleMetricInDb.getName(), FunctionTypeEnum.SUM_FUNCTION.getCode(), ruleMetricInDb.getName(), true, savedTemplate));
+            templateOutputMetas.addAll(templateOutputMetaService.getAndSaveTemplateOutputMeta(
+                    ruleMetricInDb.getName(), FunctionTypeEnum.SUM_FUNCTION.getCode(), true, savedTemplate, null));
+        }
+        savedTemplate.setStatisticAction(templateStatisticsInputMetas);
+        savedTemplate.setTemplateOutputMetas(templateOutputMetas);
+    }
+
+    private TemplateMetaResponse buildTemplateMetaResponse(Long ruleTemplateId) throws UnExpectedRequestException {
+        Template templateInDb = ruleTemplateDao.findById(ruleTemplateId);
+        if (templateInDb == null) {
+            throw new UnExpectedRequestException("rule_template_id {&CAN_NOT_BE_NULL_OR_EMPTY}");
+        }
+        List<TemplateOutputMeta> templateOutputMetas = templateOutputMetaDao.findByRuleTemplate(templateInDb);
+        List<Integer> types = templateDataSourceTypeDao.findByTemplate(templateInDb).stream()
+                .map(TemplateDataSourceType::getDataSourceTypeId).collect(Collectors.toList());
+        return new TemplateMetaResponse(templateInDb, templateOutputMetas, types);
+    }
+
+    private List<Long> resolveDepartmentScope(UserRoleContext ctx) {
+        if (ctx.roleType.equals(RoleSystemTypeEnum.DEPARTMENT_ADMIN.getCode())) {
+            List<Long> departmentIds = ctx.userRoles.stream()
+                    .map(UserRole::getRole).filter(Objects::nonNull)
+                    .map(Role::getDepartment).filter(Objects::nonNull)
+                    .map(Department::getId).collect(Collectors.toList());
+            if (Objects.nonNull(ctx.user.getDepartment())) {
+                departmentIds.add(ctx.user.getDepartment().getId());
+            }
+            return subDepartmentPermissionService.getSubDepartmentIdList(departmentIds);
+        } else {
+            Long subDeptCode = ctx.user.getSubDepartmentCode();
+            return subDeptCode != null ? Arrays.asList(subDeptCode) : Collections.emptyList();
+        }
     }
 
 }
