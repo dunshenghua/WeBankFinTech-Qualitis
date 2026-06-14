@@ -62,7 +62,7 @@ public class FilterRequest {
         this.filterColumnList = filterColumnList;
     }
 
-    public static void checkRequst(FilterRequest request) throws UnExpectedRequestException {
+    public static void checkRequest(FilterRequest request) throws UnExpectedRequestException {
         checkString(request.getSourceTable(), "source db name");
         checkString(request.getTargetTable(), "target db name");
     }

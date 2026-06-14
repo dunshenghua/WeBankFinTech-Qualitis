@@ -43,10 +43,10 @@ import com.webank.wedatasphere.qualitis.request.GetUserTableByDbIdRequest;
 import com.webank.wedatasphere.qualitis.request.MulDbRequest;
 import com.webank.wedatasphere.qualitis.request.GetDataSourceRequest;
 import com.webank.wedatasphere.qualitis.request.UdfRequest;
-import com.webank.wedatasphere.qualitis.request.UdfResponse;
 import com.webank.wedatasphere.qualitis.response.GeneralResponse;
 import com.webank.wedatasphere.qualitis.response.GetAllClusterResponse;
 import com.webank.wedatasphere.qualitis.response.GetAllResponse;
+import com.webank.wedatasphere.qualitis.response.UdfResponse;
 import com.webank.wedatasphere.qualitis.rule.entity.Rule;
 import org.json.JSONException;
 

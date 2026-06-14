@@ -17,6 +17,8 @@
 package com.webank.wedatasphere.qualitis.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
+import com.webank.wedatasphere.qualitis.project.request.CommonChecker;
 
 /**
  * @author howeye
@@ -44,6 +46,15 @@ public class GetUserColumnByTableIdRequest {
     public GetUserColumnByTableIdRequest() {
         startIndex = DEFAULT_START_INDEX;
         pageSize = DEFAULT_PAGE_SIZE;
+    }
+
+    public static void checkRequest(GetUserColumnByTableIdRequest request) throws UnExpectedRequestException {
+        if (request == null) {
+            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
+        }
+        CommonChecker.checkString(request.getClusterName(), "cluster name");
+        CommonChecker.checkString(request.getDbName(), "db name");
+        CommonChecker.checkString(request.getTableName(), "table name");
     }
 
     public GetUserColumnByTableIdRequest(Integer startIndex, Integer pageSize, String clusterName, String dbName, String tableName) {

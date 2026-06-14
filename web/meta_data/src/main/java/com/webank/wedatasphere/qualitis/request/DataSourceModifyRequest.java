@@ -1,8 +1,16 @@
 package com.webank.wedatasphere.qualitis.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.webank.wedatasphere.qualitis.constants.QualitisConstants;
+import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
+import com.webank.wedatasphere.qualitis.project.request.CommonChecker;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.apache.commons.lang.StringUtils;
 
 /**
  * @author allenzhou@webank.com
@@ -180,6 +188,41 @@ public class DataSourceModifyRequest {
 
     public void setDataSourceEnvs(List<DataSourceEnv> dataSourceEnvs) {
         this.dataSourceEnvs = dataSourceEnvs;
+    }
+
+    private static final String ENV_NAME_REGEX = "^[^,:]*$";
+
+    public static void checkRequest(DataSourceModifyRequest request) throws UnExpectedRequestException {
+        if (Integer.valueOf(QualitisConstants.DATASOURCE_MANAGER_INPUT_TYPE_AUTO).equals(request.getInputType())) {
+            CommonChecker.checkListMinSize(request.getDcnSequence(), 1, "dcnSequence");
+        }
+        if (StringUtils.isNotBlank(request.getDcnRangeType())
+                && !Arrays.asList("all", QualitisConstants.CMDB_KEY_DCN_NUM, QualitisConstants.CMDB_KEY_LOGIC_AREA).contains(request.getDcnRangeType())) {
+            throw new UnExpectedRequestException("Invalid parameter: dcn_range_type");
+        }
+        List<DataSourceEnv> dataSourceEnvs = request.getDataSourceEnvs();
+        CommonChecker.checkObject(dataSourceEnvs, "dataSourceEnvs");
+        CommonChecker.checkListMinSize(dataSourceEnvs, 1, "dataSourceEnvs");
+        Pattern pattern = Pattern.compile(ENV_NAME_REGEX);
+        for (DataSourceEnv dataSourceEnv : dataSourceEnvs) {
+            ConnectParams connectParams = dataSourceEnv.getConnectParams();
+            CommonChecker.checkObject(connectParams, "dataSourceEnvs.connectParams");
+            CommonChecker.checkString(connectParams.getHost(), "host");
+            CommonChecker.checkString(connectParams.getPort(), "port");
+            CommonChecker.checkString(dataSourceEnv.getEnvName(), "dataSourceEnvs.envName");
+            Matcher matcher = pattern.matcher(dataSourceEnv.getEnvName());
+            if (!matcher.matches()) {
+                throw new UnExpectedRequestException("Invalid envName, cannot use ',' and ':'");
+            }
+            if (QualitisConstants.AUTH_TYPE_DPM.equals(connectParams.getAuthType())) {
+                CommonChecker.checkString(connectParams.getMkPrivate(), "mkPrivate");
+                CommonChecker.checkString(connectParams.getAppId(), "appId");
+                CommonChecker.checkString(connectParams.getObjectId(), "objectId");
+            } else if (QualitisConstants.AUTH_TYPE_ACCOUNT_PWD.equals(connectParams.getAuthType())) {
+                CommonChecker.checkString(connectParams.getUsername(), "username");
+                CommonChecker.checkString(connectParams.getPassword(), "password");
+            }
+        }
     }
 
     @Override

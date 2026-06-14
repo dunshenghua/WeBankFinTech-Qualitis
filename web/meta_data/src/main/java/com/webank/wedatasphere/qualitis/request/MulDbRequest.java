@@ -406,7 +406,7 @@ public class MulDbRequest {
                 '}';
     }
 
-    public static void checkRequst(MulDbRequest request) throws UnExpectedRequestException {
+    public static void checkRequest(MulDbRequest request) throws UnExpectedRequestException {
         checkObject(request.getProjectId(), "project ID");
         checkString(request.getProjectId().toString(), "project ID string");
         checkString(request.getClusterName(), "cluster name");

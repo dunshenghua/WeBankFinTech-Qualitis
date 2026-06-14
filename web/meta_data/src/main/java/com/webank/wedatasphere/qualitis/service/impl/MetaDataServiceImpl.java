@@ -31,12 +31,7 @@ import com.webank.wedatasphere.qualitis.dto.DataVisibilityPermissionDto;
 import com.webank.wedatasphere.qualitis.entity.*;
 import com.webank.wedatasphere.qualitis.exception.PermissionDeniedRequestException;
 import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
-//import com.webank.wedatasphere.qualitis.function.dao.LinkisUdfDao;
-//import com.webank.wedatasphere.qualitis.function.dao.LinkisUdfEnableClusterDao;
-//import com.webank.wedatasphere.qualitis.function.dao.LinkisUdfEnableEngineDao;
-//import com.webank.wedatasphere.qualitis.function.entity.LinkisUdf;
-//import com.webank.wedatasphere.qualitis.function.entity.LinkisUdfEnableCluster;
-//import com.webank.wedatasphere.qualitis.function.entity.LinkisUdfEnableEngine;
+
 import com.webank.wedatasphere.qualitis.metadata.client.DataStandardClient;
 import com.webank.wedatasphere.qualitis.metadata.client.LinkisMetaDataManager;
 import com.webank.wedatasphere.qualitis.metadata.client.MetaDataClient;
@@ -137,16 +132,10 @@ public class MetaDataServiceImpl implements MetaDataService {
     private RuleDao ruleDao;
     @Autowired
     private ProjectDao projectDao;
-//    @Autowired
-//    private LinkisUdfDao linkisUdfDao;
     @Autowired
     private ClusterInfoDao clusterInfoDao;
     @Autowired
     private RuleDataSourceDao ruleDataSourceDao;
-//    @Autowired
-//    private LinkisUdfEnableEngineDao linkisUdfEnableEngineDao;
-//    @Autowired
-//    private LinkisUdfEnableClusterDao linkisUdfEnableClusterDao;
     @Autowired
     private LinkisDataSourceDao linkisDataSourceDao;
     @Autowired
@@ -169,7 +158,7 @@ public class MetaDataServiceImpl implements MetaDataService {
     private static final Logger LOGGER = LoggerFactory.getLogger(MetaDataServiceImpl.class);
 
     private final String INFO = "info";
-    private final String ENV_NAME_REGEX = "^[^,:]*$";
+
 
     @Value("${department.data_source_from: hr}")
     private String departmentSourceType;
@@ -183,20 +172,14 @@ public class MetaDataServiceImpl implements MetaDataService {
     @Override
     public GeneralResponse<GetAllResponse<DbInfoDetail>> getUserDbByCluster(GetUserDbByClusterRequest request) throws UnExpectedRequestException, MetaDataAcquireFailedException {
         // Check Arguments
-        checkRequest(request);
+        GetUserDbByClusterRequest.checkRequest(request);
         LOGGER.info("get user db By cluster request detail: {}", request.toString());
-        // Get login user
-        String userName = HttpUtils.getUserName(httpServletRequest);
-        if (StringUtils.isNotBlank(request.getProxyUser())) {
-            userName = request.getProxyUser();
-        }
+        String userName = resolveUserName(request.getProxyUser());
         GetDbByUserAndClusterRequest getDbByUserAndClusterRequest = new GetDbByUserAndClusterRequest(userName, request.getStartIndex(),
                 request.getPageSize(), request.getClusterName());
         DataInfo<DbInfoDetail> response = metaDataClient.getDbByUserAndCluster(getDbByUserAndClusterRequest);
 
-        GetAllResponse<DbInfoDetail> result = new GetAllResponse<>();
-        result.setTotal(response.getTotalCount());
-        result.setData(response.getContent());
+        GetAllResponse<DbInfoDetail> result = buildGetAllResponse(response);
         LOGGER.info("Succeed to get database by cluster, cluster: {}", request.getClusterName());
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_DB_SUCCESSFULLY}", result);
     }
@@ -204,20 +187,14 @@ public class MetaDataServiceImpl implements MetaDataService {
     @Override
     public GeneralResponse<GetAllResponse<TableInfoDetail>> getUserTableByDbId(GetUserTableByDbIdRequest request) throws UnExpectedRequestException, MetaDataAcquireFailedException {
         // Check Arguments
-        checkRequest(request);
+        GetUserTableByDbIdRequest.checkRequest(request);
         LOGGER.info("get user table By db id request detail: {}", request.toString());
-        // Get login user
-        String userName = HttpUtils.getUserName(httpServletRequest);
-        if (StringUtils.isNotBlank(request.getProxyUser())) {
-            userName = request.getProxyUser();
-        }
+        String userName = resolveUserName(request.getProxyUser());
         GetTableByUserAndDbRequest getTableByUserAndDbRequest = new GetTableByUserAndDbRequest(userName, request.getStartIndex(),
                 request.getPageSize(), request.getClusterName(), request.getDbName());
         DataInfo<TableInfoDetail> response = metaDataClient.getTableByUserAndDb(getTableByUserAndDbRequest);
 
-        GetAllResponse<TableInfoDetail> result = new GetAllResponse<>();
-        result.setTotal(response.getTotalCount());
-        result.setData(response.getContent());
+        GetAllResponse<TableInfoDetail> result = buildGetAllResponse(response);
 
         LOGGER.info("Succeed to get table by database. database: {}.{}", request.getClusterName(), request.getDbName());
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_TABLE_SUCCESSFULLY}", result);
@@ -230,9 +207,7 @@ public class MetaDataServiceImpl implements MetaDataService {
         LOGGER.info("get user table By cs id request detail: {}", request.toString());
         request.setLoginUser(HttpUtils.getUserName(httpServletRequest));
         DataInfo<CsTableInfoDetail> response = metaDataClient.getTableByCsId(request);
-        GetAllResponse<CsTableInfoDetail> result = new GetAllResponse<>();
-        result.setTotal(response.getTotalCount());
-        result.setData(response.getContent());
+        GetAllResponse<CsTableInfoDetail> result = buildGetAllResponse(response);
 
         LOGGER.info("Succeed to get table by context service ID. csId: {}", request.getCsId());
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_TABLE_SUCCESSFULLY}", result);
@@ -242,26 +217,17 @@ public class MetaDataServiceImpl implements MetaDataService {
     public GeneralResponse<GetAllResponse<ColumnInfoDetail>> getUserColumnByTableId(GetUserColumnByTableIdRequest request)
             throws UnExpectedRequestException, MetaDataAcquireFailedException {
         // Check Arguments
-        checkRequest(request);
+        GetUserColumnByTableIdRequest.checkRequest(request);
         LOGGER.info("get user column by table id request detail: {}", request.toString());
-        // Get login user
-        String userName;
+        String userName = resolveUserName(request.getLoginUser(), request.getProxyUser());
         if (request.getLoginUser() != null) {
-            userName = request.getLoginUser();
             LOGGER.info("Recover user[{}] from is get column info.", userName);
-        } else {
-            userName = HttpUtils.getUserName(httpServletRequest);
-        }
-        if (StringUtils.isNotBlank(request.getProxyUser())) {
-            userName = request.getProxyUser();
         }
         GetColumnByUserAndTableRequest getColumnByUserAndTableRequest = new GetColumnByUserAndTableRequest(userName, request.getStartIndex(),
                 request.getPageSize(), request.getClusterName(), request.getDbName(), request.getTableName());
         DataInfo<ColumnInfoDetail> response = metaDataClient.getColumnByUserAndTable(getColumnByUserAndTableRequest);
 
-        GetAllResponse<ColumnInfoDetail> result = new GetAllResponse<>();
-        result.setTotal(response.getTotalCount());
-        result.setData(response.getContent());
+        GetAllResponse<ColumnInfoDetail> result = buildGetAllResponse(response);
 
         LOGGER.info("Succeed to get column by table. table: {}.{}.{}", request.getClusterName(), request.getDbName(), request.getTableName());
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_COLUMN_SUCCESSFULLY}", result);
@@ -274,9 +240,7 @@ public class MetaDataServiceImpl implements MetaDataService {
         LOGGER.info("get user column by cs id request detail: {}", request.toString());
         request.setLoginUser(HttpUtils.getUserName(httpServletRequest));
         DataInfo<ColumnInfoDetail> response = metaDataClient.getColumnByCsId(request);
-        GetAllResponse<ColumnInfoDetail> result = new GetAllResponse<>();
-        result.setTotal(response.getTotalCount());
-        result.setData(response.getContent());
+        GetAllResponse<ColumnInfoDetail> result = buildGetAllResponse(response);
 
         LOGGER.info("Succeed to get column by context service ID. csId: {}", request.getCsId());
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_COLUMN_SUCCESSFULLY}", result);
@@ -286,7 +250,7 @@ public class MetaDataServiceImpl implements MetaDataService {
     public GeneralResponse<GetAllClusterResponse<ClusterInfoDetail>> getUserCluster(GetUserClusterRequest request)
             throws UnExpectedRequestException, MetaDataAcquireFailedException {
         // Check Arguments
-        checkRequest(request);
+        GetUserClusterRequest.checkRequest(request);
         LOGGER.info("get all cluster request detail: {}", request.toString());
         // Get login user
         String userName = HttpUtils.getUserName(httpServletRequest);
@@ -305,8 +269,8 @@ public class MetaDataServiceImpl implements MetaDataService {
 
     @Override
     public String getDbFromDatamap(String searchKey, String clusterName, String proxyUser) throws UnExpectedRequestException, MetaDataAcquireFailedException {
-        String loginUser = HttpUtils.getUserName(httpServletRequest);
-        Map<String, Object> response = dataStandardClient.getDatabase(searchKey, StringUtils.isEmpty(proxyUser) ? loginUser : proxyUser);
+        String userName = resolveUserName(proxyUser);
+        Map<String, Object> response = dataStandardClient.getDatabase(searchKey, userName);
         ClusterInfo clusterInfo = clusterInfoDao.findByClusterName(clusterName);
         if (clusterInfo == null) {
             throw new UnExpectedRequestException(String.format("%s 集群名称不存在", clusterName));
@@ -320,10 +284,10 @@ public class MetaDataServiceImpl implements MetaDataService {
 
     @Override
     public Integer getDatasetFromDatamap(String dbId, String datasetName, String clusterName, String proxyUser) throws UnExpectedRequestException, MetaDataAcquireFailedException {
-        String loginUser = HttpUtils.getUserName(httpServletRequest);
+        String userName = resolveUserName(proxyUser);
         int page = 0;
         int size = 200;
-        Map<String, Object> response = dataStandardClient.getDataset(dbId, datasetName, page, size, StringUtils.isEmpty(proxyUser) ? loginUser : proxyUser);
+        Map<String, Object> response = dataStandardClient.getDataset(dbId, datasetName, page, size, userName);
         ClusterInfo clusterInfo = clusterInfoDao.findByClusterName(clusterName);
         if (clusterInfo == null) {
             throw new UnExpectedRequestException(String.format("%s 集群名称不存在", clusterName));
@@ -336,20 +300,20 @@ public class MetaDataServiceImpl implements MetaDataService {
 
     @Override
     public Map<String, Object> getColumnFromDatamap(Long datasetId, String fieldName, String proxyUser) throws UnExpectedRequestException, MetaDataAcquireFailedException {
-        String loginUser = HttpUtils.getUserName(httpServletRequest);
-        return dataStandardClient.getColumnStandard(datasetId, fieldName, StringUtils.isEmpty(proxyUser) ? loginUser : proxyUser);
+        String userName = resolveUserName(proxyUser);
+        return dataStandardClient.getColumnStandard(datasetId, fieldName, userName);
     }
 
     @Override
     public Map<String, Object> getDataStandardDetailFromDatamap(String stdCode, String source, String proxyUser) throws UnExpectedRequestException, MetaDataAcquireFailedException {
-        String loginUser = HttpUtils.getUserName(httpServletRequest);
-        return dataStandardClient.getDataStandardDetail(stdCode, source, StringUtils.isEmpty(proxyUser) ? loginUser : proxyUser);
+        String userName = resolveUserName(proxyUser);
+        return dataStandardClient.getDataStandardDetail(stdCode, source, userName);
     }
 
     @Override
     @Transactional(rollbackFor = {Exception.class, UnExpectedRequestException.class})
     public String addMultiDbRules(MulDbRequest request) throws Exception {
-        MulDbRequest.checkRequst(request);
+        MulDbRequest.checkRequest(request);
         LOGGER.info("get mul db request detail: {}", request.toString());
         if (request.getRuleEnable() == null) {
             request.setRuleEnable(true);
@@ -460,24 +424,14 @@ public class MetaDataServiceImpl implements MetaDataService {
 
     @Override
     public GeneralResponse<Map<String, Object>> getAllDataSourceTypes(String clusterName, String proxyUser) throws UnExpectedRequestException, MetaDataAcquireFailedException {
-        // Get login user
-        String userName = HttpUtils.getUserName(httpServletRequest);
-        if (StringUtils.isNotBlank(proxyUser)) {
-            userName = proxyUser;
-        }
-
+        String userName = resolveUserName(proxyUser);
         return metaDataClient.getAllDataSourceTypes(clusterName, userName);
     }
 
     @Override
     public GeneralResponse<Map<String, Object>> getDataSourceEnv(String clusterName, String proxyUser)
             throws UnExpectedRequestException, MetaDataAcquireFailedException {
-        // Get login user
-        String userName = HttpUtils.getUserName(httpServletRequest);
-        if (StringUtils.isNotBlank(proxyUser)) {
-            userName = proxyUser;
-        }
-
+        String userName = resolveUserName(proxyUser);
         return metaDataClient.getDataSourceEnv(clusterName, userName);
     }
 
@@ -809,11 +763,7 @@ public class MetaDataServiceImpl implements MetaDataService {
 
     @Override
     public GeneralResponse<Map<String, Object>> getDataSourceKeyDefine(String clusterName, String proxyUser, Long keyId) throws UnExpectedRequestException, MetaDataAcquireFailedException {
-        // Get login user
-        String userName = HttpUtils.getUserName(httpServletRequest);
-        if (StringUtils.isNotBlank(proxyUser)) {
-            userName = proxyUser;
-        }
+        String userName = resolveUserName(proxyUser);
         return metaDataClient.getDataSourceKeyDefine(clusterName, userName, keyId);
     }
 
@@ -826,22 +776,7 @@ public class MetaDataServiceImpl implements MetaDataService {
         Map<String, Object> connectMap = new HashMap<>();
         boolean isShare = QualitisConstants.DATASOURCE_MANAGER_VERIFY_TYPE_SHARE == request.getVerifyType();
         if (isShare) {
-            ConnectParams connectParams = request.getConnectParams();
-            String authType = connectParams.getAuthType();
-            connectMap.put("authType", authType);
-            if (QualitisConstants.AUTH_TYPE_DPM.equals(authType)) {
-                connectMap.put("objectid", connectParams.getObjectId());
-                connectMap.put("mkPrivate", connectParams.getMkPrivate());
-                connectMap.put("appid", connectParams.getAppId());
-                String dk = connectParams.getDk();
-                if (StringUtils.isNotEmpty(dk)) {
-                    connectMap.put("dk", dk);
-                }
-            } else if (QualitisConstants.AUTH_TYPE_ACCOUNT_PWD.equals(authType)) {
-                connectMap.put("username", connectParams.getUsername());
-                connectMap.put("password", CryptoUtils.decode(connectParams.getPassword()));
-            }
-            connectMap.put("timestamp", connectParams.getTimeStamp());
+            populateAuthCredentials(connectMap, request.getConnectParams(), true);
         }
 
         jsonMap.put("connectParams", connectMap);
@@ -850,21 +785,7 @@ public class MetaDataServiceImpl implements MetaDataService {
             for (DataSourceEnv dataSourceEnv : dataSourceEnvs) {
                 ConnectParams connectParams = dataSourceEnv.getConnectParams();
                 if (!isShare) {
-                    String authType = connectParams.getAuthType();
-                    connectMap.put("authType", authType);
-                    if (QualitisConstants.AUTH_TYPE_DPM.equals(authType)) {
-                        connectMap.put("objectid", connectParams.getObjectId());
-                        connectMap.put("mkPrivate", connectParams.getMkPrivate());
-                        connectMap.put("appid", connectParams.getAppId());
-                        String dk = connectParams.getDk();
-                        if (StringUtils.isNotEmpty(dk)) {
-                            connectMap.put("dk", dk);
-                        }
-                    } else if (QualitisConstants.AUTH_TYPE_ACCOUNT_PWD.equals(authType)) {
-                        connectMap.put("username", connectParams.getUsername());
-                        connectMap.put("password", CryptoUtils.decode(connectParams.getPassword()));
-                    }
-                    connectMap.put("timestamp", connectParams.getTimeStamp());
+                    populateAuthCredentials(connectMap, connectParams, true);
                 }
                 connectMap.put("host", connectParams.getHost());
                 connectMap.put("port", connectParams.getPort());
@@ -899,7 +820,7 @@ public class MetaDataServiceImpl implements MetaDataService {
     @Override
     public GeneralResponse modifyDataSource(String clusterName, Long dataSourceId, DataSourceModifyRequest request)
             throws Exception {
-        checkRequest(request);
+        DataSourceModifyRequest.checkRequest(request);
         LOGGER.info("modify data source request detail: {}", request.toString());
         LinkisDataSource linkisDataSource = linkisDataSourceDao.getByLinkisDataSourceId(dataSourceId);
         if (Objects.isNull(linkisDataSource)) {
@@ -914,15 +835,7 @@ public class MetaDataServiceImpl implements MetaDataService {
         subDepartmentPermissionService.checkEditablePermission(roleType, userInDb, userInDb.getUsername(), request.getDevDepartmentId(), request.getOpsDepartmentId(), false);
 
 //        save datasource to linkis
-        LinkisDataSourceRequest linkisDataSourceRequest = new LinkisDataSourceRequest();
-        BeanUtils.copyProperties(request, linkisDataSourceRequest);
-        if (CollectionUtils.isNotEmpty(request.getDataSourceEnvs())) {
-            ConnectParams sharedConnectParams = request.getDataSourceEnvs().get(0).getConnectParams();
-            LinkisConnectParamsRequest connectParamsRequest = new LinkisConnectParamsRequest();
-            BeanUtils.copyProperties(sharedConnectParams, connectParamsRequest);
-            linkisDataSourceRequest.setSharedConnectParams(connectParamsRequest);
-        }
-        linkisDataSourceRequest.setLabels(StringUtils.join(request.getLabels(), SpecCharEnum.COMMA.getValue()));
+        LinkisDataSourceRequest linkisDataSourceRequest = buildLinkisDataSourceRequest(request);
         linkisDataSourceRequest.setLinkisDataSourceId(dataSourceId);
 //      由于Linkis对数据变更的权限控制，因此使用linkisDataSource.getCreateUser()
 //      调整为使用数据源管理员
@@ -950,17 +863,8 @@ public class MetaDataServiceImpl implements MetaDataService {
 //        Existed in request and database
         List<LinkisDataSourceEnvRequest> modifyDatasourceEnvList = dataSourceEnvList.stream().filter(dataSourceEnv -> envNameMapInDb.containsKey(dataSourceEnv.getEnvName()))
                 .map(dataSourceEnv -> {
-                    LinkisDataSourceEnvRequest linkisDataSourceEnvRequest = new LinkisDataSourceEnvRequest();
+                    LinkisDataSourceEnvRequest linkisDataSourceEnvRequest = toLinkisDataSourceEnvRequest(dataSourceEnv, request.getDataSourceTypeId());
                     linkisDataSourceEnvRequest.setId(envNameMapInDb.get(dataSourceEnv.getEnvName()).getEnvId());
-                    linkisDataSourceEnvRequest.setDataSourceTypeId(request.getDataSourceTypeId());
-                    linkisDataSourceEnvRequest.setEnvName(dataSourceEnv.getEnvName());
-                    linkisDataSourceEnvRequest.setEnvDesc(dataSourceEnv.getEnvDesc());
-                    linkisDataSourceEnvRequest.setDcnNum(dataSourceEnv.getDcnNum());
-                    linkisDataSourceEnvRequest.setLogicArea(dataSourceEnv.getLogicArea());
-                    linkisDataSourceEnvRequest.setDatabaseInstance(dataSourceEnv.getDatabaseInstance());
-                    LinkisConnectParamsRequest connectParamsRequest = new LinkisConnectParamsRequest();
-                    BeanUtils.copyProperties(dataSourceEnv.getConnectParams(), connectParamsRequest);
-                    linkisDataSourceEnvRequest.setConnectParamsRequest(connectParamsRequest);
                     return linkisDataSourceEnvRequest;
                 }).collect(Collectors.toList());
         if (CollectionUtils.isNotEmpty(modifyDatasourceEnvList)) {
@@ -969,19 +873,7 @@ public class MetaDataServiceImpl implements MetaDataService {
 
 //        Existed in request, but not in database
         List<LinkisDataSourceEnvRequest> createDatasourceEnvList = dataSourceEnvList.stream().filter(dataSourceEnv -> !envNameMapInDb.containsKey(dataSourceEnv.getEnvName()))
-                .map(dataSourceEnv -> {
-                    LinkisDataSourceEnvRequest linkisDataSourceEnvRequest = new LinkisDataSourceEnvRequest();
-                    linkisDataSourceEnvRequest.setDataSourceTypeId(request.getDataSourceTypeId());
-                    linkisDataSourceEnvRequest.setEnvName(dataSourceEnv.getEnvName());
-                    linkisDataSourceEnvRequest.setEnvDesc(dataSourceEnv.getEnvDesc());
-                    linkisDataSourceEnvRequest.setDcnNum(dataSourceEnv.getDcnNum());
-                    linkisDataSourceEnvRequest.setLogicArea(dataSourceEnv.getLogicArea());
-                    linkisDataSourceEnvRequest.setDatabaseInstance(dataSourceEnv.getDatabaseInstance());
-                    LinkisConnectParamsRequest connectParamsRequest = new LinkisConnectParamsRequest();
-                    BeanUtils.copyProperties(dataSourceEnv.getConnectParams(), connectParamsRequest);
-                    linkisDataSourceEnvRequest.setConnectParamsRequest(connectParamsRequest);
-                    return linkisDataSourceEnvRequest;
-                })
+                .map(dataSourceEnv -> toLinkisDataSourceEnvRequest(dataSourceEnv, request.getDataSourceTypeId()))
                 .collect(Collectors.toList());
         if (CollectionUtils.isNotEmpty(createDatasourceEnvList)) {
             linkisMetaDataManager.createDataSourceEnvAndSetEnvId(request.getInputType(), request.getVerifyType(), createDatasourceEnvList, clusterName, linkisConfig.getDatasourceAdmin());
@@ -1042,17 +934,7 @@ public class MetaDataServiceImpl implements MetaDataService {
         Map<String, Object> connectMap = new HashMap<>();
         connectMap.put("envIdArray", request.getEnvIdArray());
         if (QualitisConstants.DATASOURCE_MANAGER_VERIFY_TYPE_SHARE == request.getVerifyType()) {
-            ConnectParams connectParams = dataSourceEnv.getConnectParams();
-            String authType = connectParams.getAuthType();
-            connectMap.put("authType", authType);
-            if (QualitisConstants.AUTH_TYPE_ACCOUNT_PWD.equals(authType)) {
-                connectMap.put("username", connectParams.getUsername());
-                connectMap.put("password", connectParams.getPassword());
-            } else if (QualitisConstants.AUTH_TYPE_DPM.equals(authType)) {
-                connectMap.put("appid", connectParams.getAppId());
-                connectMap.put("objectid", connectParams.getObjectId());
-                connectMap.put("mkPrivate", connectParams.getMkPrivate());
-            }
+            populateAuthCredentials(connectMap, dataSourceEnv.getConnectParams(), false);
         }
 
         ModifyDataSourceParameterRequest modifyDataSourceParameterRequest = new ModifyDataSourceParameterRequest();
@@ -1069,7 +951,7 @@ public class MetaDataServiceImpl implements MetaDataService {
     @Override
     public GeneralResponse createDataSource(String clusterName, DataSourceModifyRequest request)
             throws UnExpectedRequestException, MetaDataAcquireFailedException, IOException, JSONException, PermissionDeniedRequestException {
-        checkRequest(request);
+        DataSourceModifyRequest.checkRequest(request);
         LOGGER.info("create data source param request detail: {}", request);
         User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
         List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
@@ -1082,32 +964,15 @@ public class MetaDataServiceImpl implements MetaDataService {
         }
 
         // save datasource to Linkis
-        LinkisDataSourceRequest linkisDataSourceRequest = new LinkisDataSourceRequest();
-        BeanUtils.copyProperties(request, linkisDataSourceRequest);
-        if (CollectionUtils.isNotEmpty(request.getDataSourceEnvs())) {
-            ConnectParams sharedConnectParams = request.getDataSourceEnvs().get(0).getConnectParams();
-            LinkisConnectParamsRequest connectParamsRequest = new LinkisConnectParamsRequest();
-            BeanUtils.copyProperties(sharedConnectParams, connectParamsRequest);
-            linkisDataSourceRequest.setSharedConnectParams(connectParamsRequest);
-        }
-        linkisDataSourceRequest.setLabels(StringUtils.join(request.getLabels(), SpecCharEnum.COMMA.getValue()));
+        LinkisDataSourceRequest linkisDataSourceRequest = buildLinkisDataSourceRequest(request);
         Long linkisDataSourceId = linkisMetaDataManager.createDataSource(linkisDataSourceRequest, clusterName, linkisConfig.getDatasourceAdmin());
 
         addPrefixToEnvName(linkisDataSourceId, request.getDataSourceEnvs());
 
 //        save env to Linkis
-        List<LinkisDataSourceEnvRequest> linkisDataSourceEnvRequestList = request.getDataSourceEnvs().stream().map(dataSourceEnv -> {
-            LinkisDataSourceEnvRequest linkisDataSourceEnvRequest = new LinkisDataSourceEnvRequest();
-            linkisDataSourceEnvRequest.setDataSourceTypeId(request.getDataSourceTypeId());
-            linkisDataSourceEnvRequest.setEnvName(dataSourceEnv.getEnvName());
-            linkisDataSourceEnvRequest.setDatabaseInstance(dataSourceEnv.getDatabaseInstance());
-            linkisDataSourceEnvRequest.setDcnNum(dataSourceEnv.getDcnNum());
-            linkisDataSourceEnvRequest.setLogicArea(dataSourceEnv.getLogicArea());
-            LinkisConnectParamsRequest connectParamsRequest = new LinkisConnectParamsRequest();
-            BeanUtils.copyProperties(dataSourceEnv.getConnectParams(), connectParamsRequest);
-            linkisDataSourceEnvRequest.setConnectParamsRequest(connectParamsRequest);
-            return linkisDataSourceEnvRequest;
-        }).collect(Collectors.toList());
+        List<LinkisDataSourceEnvRequest> linkisDataSourceEnvRequestList = request.getDataSourceEnvs().stream()
+                .map(dataSourceEnv -> toLinkisDataSourceEnvRequest(dataSourceEnv, request.getDataSourceTypeId()))
+                .collect(Collectors.toList());
         linkisDataSourceRequest.setDataSourceEnvs(linkisDataSourceEnvRequestList);
         if (CollectionUtils.isNotEmpty(linkisDataSourceEnvRequestList)) {
             try {
@@ -1148,9 +1013,7 @@ public class MetaDataServiceImpl implements MetaDataService {
         LinkisDataSourceInfoDetail linkisDataSourceInfoDetail = metaDataClient.getDataSourceInfoById(clusterName, linkisConfig.getDatasourceAdmin(), dataSourceId);
         DataInfo<ColumnInfoDetail> response = metaDataClient.getColumnsByDataSourceName(clusterName, linkisConfig.getDatasourceAdmin(), linkisDataSourceInfoDetail.getDataSourceName(), dbName, tableName, envId);
 
-        GetAllResponse<ColumnInfoDetail> result = new GetAllResponse<>();
-        result.setTotal(response.getTotalCount());
-        result.setData(response.getContent());
+        GetAllResponse<ColumnInfoDetail> result = buildGetAllResponse(response);
 
         LOGGER.info("Succeed to get column by data source table. table: {}.{}.{}", clusterName, dbName, tableName);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_COLUMN_SUCCESSFULLY}", result);
@@ -1284,318 +1147,35 @@ public class MetaDataServiceImpl implements MetaDataService {
     @Override
     @Transactional(rollbackFor = {Exception.class, RuntimeException.class, UnExpectedRequestException.class})
     public GeneralResponse<UdfResponse> addUdf(UdfRequest request) throws PermissionDeniedRequestException, UnExpectedRequestException, JSONException, MetaDataAcquireFailedException, IOException {
-//        UdfRequest.checkRequestForAdd(request);
-//        LOGGER.info("Start to add udf, request: {}", request.toString());
-//        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-//        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-//        Integer roleType = roleService.getRoleType(userRoles);
-//
-//        subDepartmentPermissionService.checkEditablePermission(roleType, userInDb, null, request.getDevDepartmentId(), request.getOpsDepartmentId(), false);
-//
-//        LinkisUdf linkisUdfTemp = linkisUdfDao.findByName(request.getName());
-//        if (linkisUdfTemp != null) {
-//            throw new UnExpectedRequestException("Linkis UDF " + "{&ALREADY_EXIST}");
-//        }
-//
-//        LinkisUdf linkisUdf = new LinkisUdf(request.getName(), request.getCnName(), request.getDesc(), request.getEnter(), request.getReturnType(), request.getRegisterName(), request.getDir(), request.getImplType(), request.getDevDepartmentId(), request.getDevDepartmentName(), request.getOpsDepartmentId(), request.getOpsDepartmentName(), request.getFile(), request.getStatus());
-//        linkisUdf.setCreateTime(DateUtils.now());
-//        linkisUdf.setCreateUser(userInDb.getUsername());
-//        LinkisUdf linkisUdfInDb = linkisUdfDao.save(linkisUdf);
-//        Map<String, Long> udfClusterIdMaps = new HashMap<>(request.getEnableCluster().size());
-//        List<LinkisUdfEnableCluster> linkisUdfEnableClusters = new ArrayList<>(request.getEnableCluster().size());
-//        // Each cluster needs to upload the function file and create the function.
-//        File uploadFile = new File(request.getFile());
-//        for (String currentCluster : request.getEnableCluster()) {
-//            String targetFilePath = metaDataClient.checkFilePathExistsAndUploadToWorkspace(currentCluster, linkisConfig.getUdfAdmin(), uploadFile, Boolean.TRUE);
-//            Long udfId = metaDataClient.clientAdd(currentCluster, targetFilePath, uploadFile, request.getFile(), request.getDesc(), request.getName(), request.getReturnType(), request.getEnter(), request.getRegisterName(), request.getStatus(), request.getDir());
-//
-//            // Share with login user's proxy users and deploy.
-//            if (udfId != null) {
-//                udfClusterIdMaps.put(currentCluster, udfId);
-//                List<String> proxyUserNames = userInDb.getUserProxyUsers().stream().map(userProxyUser -> userProxyUser.getProxyUser().getProxyUserName()).distinct().collect(Collectors.toList());
-//                metaDataClient.shareAndDeploy(udfId, currentCluster, proxyUserNames, linkisUdf.getName());
-//                LinkisUdfEnableCluster linkisUdfEnableCluster = new LinkisUdfEnableCluster(linkisUdfInDb, currentCluster, udfId, request.getName());
-//                linkisUdfEnableClusters.add(linkisUdfEnableCluster);
-//            }
-//        }
-//
-//        // If not all successful, delete the added ones.
-//        if (udfClusterIdMaps.size() != request.getEnableCluster().size()) {
-//            LOGGER.info("Start to delete already exist udf.");
-//            for (Map.Entry<String, Long> currentCluster : udfClusterIdMaps.entrySet()) {
-//                metaDataClient.deleteUdf(currentCluster.getKey(), currentCluster.getValue(), linkisConfig.getUdfAdmin(), new File(linkisUdf.getUploadPath()).getName());
-//            }
-//        }
-//
-//        List<LinkisUdfEnableEngine> linkisUdfEnableEngines = new ArrayList<>(request.getEnableEngine().size());
-//        for (Integer engineCode : request.getEnableEngine()) {
-//            LinkisUdfEnableEngine linkisUdfEnableEngine = new LinkisUdfEnableEngine(linkisUdfInDb, engineCode);
-//            linkisUdfEnableEngines.add(linkisUdfEnableEngine);
-//        }
-//        linkisUdfEnableEngineDao.saveAll(linkisUdfEnableEngines);
-//
-//        linkisUdfEnableClusterDao.saveAll(linkisUdfEnableClusters);
-//
-//        LOGGER.info("Success to save linkis udf and related tables(linkis udf engine, cluster).");
-//        dataVisibilityService.saveBatch(linkisUdf.getId(), TableDataTypeEnum.LINKIS_UDF, request.getVisibilityDepartmentList());
-
-//        if (uploadFile.exists()) {
-//            Files.delete(uploadFile.toPath());
-//        }
-//        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_ADD_UDF}", new UdfResponse(linkisUdf.getId()));
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_ADD_UDF}", null);
     }
 
     @Override
     @Transactional(rollbackFor = {Exception.class, RuntimeException.class, UnExpectedRequestException.class})
     public GeneralResponse<UdfResponse> modifyUdf(UdfRequest request) throws PermissionDeniedRequestException, MetaDataAcquireFailedException, UnExpectedRequestException, JSONException, IOException {
-//        UdfRequest.checkRequestForModify(request);
-//        LinkisUdf linkisUdf = linkisUdfDao.findById(request.getId());
-//        if (linkisUdf == null) {
-//            throw new UnExpectedRequestException("Linkis UDF " + "{&DOES_NOT_EXIST}");
-//        }
-//
-//        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-//        LOGGER.info("Start to modify udf, request: {}", request.toString());
-//        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-//        Integer roleType = roleService.getRoleType(userRoles);
-//        subDepartmentPermissionService.checkEditablePermission(roleType, userInDb, linkisUdf.getCreateUser(), request.getDevDepartmentId(), request.getOpsDepartmentId(), false);
-//
-//        //If enable cluster changed, delete in old cluster
-//        Set<LinkisUdfEnableCluster> alreadyExistsLinkisUdfEnableClusterSet = linkisUdf.getLinkisUdfEnableClusterSet();
-//        Map<String, Long> clusterIdMaps = new HashMap<>(alreadyExistsLinkisUdfEnableClusterSet.size());
-//        Set<LinkisUdfEnableCluster> abandonlinkisUdfEnableClusterSet = new HashSet<>();
-//        List<LinkisUdfEnableCluster> newLinkisUdfEnableClusterSet = new ArrayList<>();
-//
-//        for (LinkisUdfEnableCluster linkisUdfEnableCluster : alreadyExistsLinkisUdfEnableClusterSet) {
-//            if (!request.getEnableCluster().contains(linkisUdfEnableCluster.getEnableClusterName())) {
-//                abandonlinkisUdfEnableClusterSet.add(linkisUdfEnableCluster);
-//            } else {
-//                clusterIdMaps.put(linkisUdfEnableCluster.getEnableClusterName(), linkisUdfEnableCluster.getLinkisUdfId());
-//            }
-//        }
-//
-//        if (CollectionUtils.isNotEmpty(abandonlinkisUdfEnableClusterSet)) {
-//            // Delete by ID.
-//            for (LinkisUdfEnableCluster linkisUdfEnableCluster : abandonlinkisUdfEnableClusterSet) {
-//                metaDataClient.deleteUdf(linkisUdfEnableCluster.getEnableClusterName(), linkisUdfEnableCluster.getLinkisUdfId(), linkisConfig.getUdfAdmin(), new File(linkisUdf.getUploadPath()).getName());
-//            }
-//            linkisUdfEnableClusterDao.deleteInBatch(abandonlinkisUdfEnableClusterSet);
-//        }
-//        File uploadFile = new File(request.getFile());
-//        for (String currentCluster : request.getEnableCluster()) {
-//            // Check jar changed or not, to upload new jar.
-//            boolean needUpload = !linkisUdf.getUploadPath().equals(request.getFile());
-//            String targetFilePath = metaDataClient.checkFilePathExistsAndUploadToWorkspace(currentCluster, linkisConfig.getUdfAdmin(), uploadFile, needUpload);
-//
-//            // New cluster, add.
-//            if (!clusterIdMaps.keySet().contains(currentCluster)) {
-//                Long udfId = metaDataClient.clientAdd(currentCluster, targetFilePath, uploadFile, request.getFile(), request.getDesc(), request.getName(), request.getReturnType(), request.getEnter(), request.getRegisterName(), request.getStatus(), request.getDir());
-//                List<String> proxyUserNames = userInDb.getUserProxyUsers().stream().map(userProxyUser -> userProxyUser.getProxyUser().getProxyUserName()).distinct().collect(Collectors.toList());
-//                metaDataClient.shareAndDeploy(udfId, currentCluster, proxyUserNames, linkisUdf.getName());
-//
-//                LinkisUdfEnableCluster linkisUdfEnableCluster = new LinkisUdfEnableCluster(linkisUdf, currentCluster, udfId, request.getName());
-//                newLinkisUdfEnableClusterSet.add(linkisUdfEnableCluster);
-//                continue;
-//            }
-//            metaDataClient.clientModify(targetFilePath, uploadFile, currentCluster, clusterIdMaps, request.getFile(), request.getDesc(), request.getName(), request.getReturnType(), request.getEnter(), request.getRegisterName());
-//            // Share, deploy
-//            List<String> proxyUserNames = userInDb.getUserProxyUsers().stream().map(userProxyUser -> userProxyUser.getProxyUser().getProxyUserName()).distinct().collect(Collectors.toList());
-//            metaDataClient.shareAndDeploy(clusterIdMaps.get(currentCluster), currentCluster, proxyUserNames, linkisUdf.getName());
-//        }
-//
-//        linkisUdf.setEnter(request.getEnter());
-//        linkisUdf.setUdfDesc(request.getDesc());
-//        linkisUdf.setStatus(request.getStatus());
-//        linkisUdf.setCnName(request.getCnName());
-//        linkisUdf.setUploadPath(request.getFile());
-//        linkisUdf.setReturnType(request.getReturnType());
-//        linkisUdf.setRegisterName(request.getRegisterName());
-//        linkisUdf.setDevDepartmentId(request.getDevDepartmentId());
-//        linkisUdf.setOpsDepartmentId(request.getOpsDepartmentId());
-//        linkisUdf.setDevDepartmentName(request.getDevDepartmentName());
-//        linkisUdf.setOpsDepartmentName(request.getOpsDepartmentName());
-//        linkisUdf.setModifyTime(DateUtils.now());
-//        linkisUdf.setModifyUser(userInDb.getUsername());
-//
-//        // Delete all enable engines
-//        linkisUdfEnableEngineDao.deleteInBatch(linkisUdf.getLinkisUdfEnableEngineSet());
-//        List<LinkisUdfEnableEngine> linkisUdfEnableEngines = new ArrayList<>(request.getEnableEngine().size());
-//        for (Integer engineCode : request.getEnableEngine()) {
-//            LinkisUdfEnableEngine linkisUdfEnableEngine = new LinkisUdfEnableEngine(linkisUdf, engineCode);
-//            linkisUdfEnableEngines.add(linkisUdfEnableEngine);
-//        }
-//        linkisUdfEnableEngineDao.saveAll(linkisUdfEnableEngines);
-//
-//        linkisUdfEnableClusterDao.saveAll(newLinkisUdfEnableClusterSet);
-//
-//        LOGGER.info("Success to modify linkis udf and related tables(linkis udf engine, cluster).");
-//        dataVisibilityService.delete(linkisUdf.getId(), TableDataTypeEnum.LINKIS_UDF);
-//        dataVisibilityService.saveBatch(linkisUdf.getId(), TableDataTypeEnum.LINKIS_UDF, request.getVisibilityDepartmentList());
-
-//        if (uploadFile.exists()) {
-//            Files.delete(uploadFile.toPath());
-//        }
-//        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_MODIFY_UDF}", new UdfResponse(linkisUdf.getId()));
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_MODIFY_UDF}", null);
     }
 
     @Override
     public GeneralResponse<UdfResponse> getUdfDetail(Long udfId) throws MetaDataAcquireFailedException, UnExpectedRequestException {
-//        UdfRequest.checkRequestForGetDetail(udfId);
-//        LOGGER.info("Start to get udf detail, request: {}", udfId.toString());
-//
-//        // Check detail permission.
-//        LinkisUdf linkisUdf = linkisUdfDao.findById(udfId);
-//        if (linkisUdf == null || CollectionUtils.isEmpty(linkisUdf.getLinkisUdfEnableClusterSet()) || CollectionUtils.isEmpty(linkisUdf.getLinkisUdfEnableEngineSet())) {
-//            throw new UnExpectedRequestException("Linkis UDF " + "{&DOES_NOT_EXIST}");
-//        }
-//        DataVisibilityPermissionDto dataVisibilityPermissionDto = new DataVisibilityPermissionDto.Builder()
-//                .createUser(linkisUdf.getCreateUser())
-//                .devDepartmentId(linkisUdf.getDevDepartmentId())
-//                .opsDepartmentId(linkisUdf.getOpsDepartmentId())
-//                .build();
-//        subDepartmentPermissionService.checkAccessiblePermission(linkisUdf.getId(), TableDataTypeEnum.LINKIS_UDF, dataVisibilityPermissionDto);
-//
-//        UdfResponse udfResponse = new UdfResponse(linkisUdf);
-//        List<DepartmentSubInfoResponse> departmentInfoResponses = new ArrayList<>();
-//        List<DataVisibility> dataVisibilityList = dataVisibilityService.filter(linkisUdf.getId(), TableDataTypeEnum.LINKIS_UDF);
-//        if (CollectionUtils.isNotEmpty(dataVisibilityList)) {
-//            departmentInfoResponses = dataVisibilityList.stream().map(dataVisibility -> {
-//                DepartmentSubInfoResponse departmentInfoResponse = new DepartmentSubInfoResponse();
-//                departmentInfoResponse.setId(dataVisibility.getDepartmentSubId());
-//                departmentInfoResponse.setName(dataVisibility.getDepartmentSubName());
-//                return departmentInfoResponse;
-//            }).collect(Collectors.toList());
-//        }
-//        udfResponse.setVisibilityDepartmentList(departmentInfoResponses);
-//        return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_UDF}", udfResponse);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_UDF}", null);
     }
 
     @Override
     public GeneralResponse<DataInfo<UdfResponse>> getUdfAllWithPage(UdfRequest request) throws UnExpectedRequestException {
-//        UdfRequest.checkRequestForGetAllWithPage(request);
-//        LOGGER.info("Start to get udf all with page, request: {}", request.toString());
-//        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-//        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-//        Integer roleType = roleService.getRoleType(userRoles);
-//
-//        int totalCount = 0;
-//        List<LinkisUdf> linkisUdfList = new ArrayList<>();
-//        List<UdfResponse> udfResponseList = new ArrayList<>(request.getSize());
-//
-//        List<Long> dataVisibilityIds = new ArrayList<>();
-//        if (CollectionUtils.isNotEmpty(request.getVisibilityDepartmentList())) {
-//            dataVisibilityIds = request.getVisibilityDepartmentList().stream().map(departmentSubInfoRequest -> departmentSubInfoRequest.getId()).collect(Collectors.toList());
-//        }
-//
-//        if (RoleSystemTypeEnum.ADMIN.getCode().equals(roleType)) {
-//            LOGGER.info("SYS_ADMIN will get all data.");
-//            Page<LinkisUdf> linkisUdfPage = linkisUdfDao.filterAll(StringUtils.isEmpty(request.getName()) ? "" : ("%" + request.getName() + "%"), StringUtils.isEmpty(request.getCnName()) ? "" : ("%" + request.getCnName() + "%"), StringUtils.isEmpty(request.getDir()) ? "" : request.getDir(), request.getImplType(), CollectionUtils.isEmpty(request.getEnableEngine()) ? null : request.getEnableEngine(), CollectionUtils.isEmpty(request.getEnableCluster()) ? null : request.getEnableCluster(), StringUtils.isEmpty(request.getCreateUser()) ? "" : request.getCreateUser(), StringUtils.isEmpty(request.getModifyUser()) ? "" : request.getModifyUser(), request.getDevDepartmentId(), request.getOpsDepartmentId(), dataVisibilityIds, request.getPage(), request.getSize());
-//            linkisUdfList = linkisUdfPage.getContent();
-//            totalCount = new Long(linkisUdfPage.getTotalElements()).intValue();
-//        } else if (RoleSystemTypeEnum.DEPARTMENT_ADMIN.getCode().equals(roleType)) {
-//            List<Long> departmentIds = userRoles.stream().map(UserRole::getRole)
-//                    .filter(Objects::nonNull).map(Role::getDepartment)
-//                    .filter(Objects::nonNull).map(Department::getId)
-//                    .collect(Collectors.toList());
-//            if (Objects.nonNull(userInDb.getDepartment())) {
-//                departmentIds.add(userInDb.getDepartment().getId());
-//            }
-//            List<Long> devAndOpsInfoWithDeptList = subDepartmentPermissionService.getSubDepartmentIdList(departmentIds);
-//            devAndOpsInfoWithDeptList.addAll(dataVisibilityIds);
-//            Page<LinkisUdf> linkisUdfPage = linkisUdfDao.filter(StringUtils.isEmpty(request.getName()) ? "" : ("%" + request.getName() + "%"), StringUtils.isEmpty(request.getCnName()) ? "" : ("%" + request.getCnName() + "%"), StringUtils.isEmpty(request.getDir()) ? "" : request.getDir(), request.getImplType(), CollectionUtils.isEmpty(request.getEnableEngine()) ? null : request.getEnableEngine(), CollectionUtils.isEmpty(request.getEnableCluster()) ? null : request.getEnableCluster(), StringUtils.isEmpty(request.getCreateUser()) ? "" : request.getCreateUser(), StringUtils.isEmpty(request.getModifyUser()) ? "" : request.getModifyUser(), TableDataTypeEnum.LINKIS_UDF.getCode(), devAndOpsInfoWithDeptList.isEmpty() ? null : devAndOpsInfoWithDeptList, userInDb.getUsername(), request.getPage(), request.getSize());
-//            linkisUdfList = linkisUdfPage.getContent();
-//            totalCount = new Long(linkisUdfPage.getTotalElements()).intValue();
-//        } else if (RoleSystemTypeEnum.PROJECTOR.getCode().equals(roleType)) {
-//            dataVisibilityIds.add(userInDb.getSubDepartmentCode());
-//            Page<LinkisUdf> linkisUdfPage = linkisUdfDao.filter(StringUtils.isEmpty(request.getName()) ? "" : ("%" + request.getName() + "%"), StringUtils.isEmpty(request.getCnName()) ? "" : ("%" + request.getCnName() + "%"), StringUtils.isEmpty(request.getDir()) ? "" : request.getDir(), request.getImplType(), CollectionUtils.isEmpty(request.getEnableEngine()) ? null : request.getEnableEngine(), CollectionUtils.isEmpty(request.getEnableCluster()) ? null : request.getEnableCluster(), StringUtils.isEmpty(request.getCreateUser()) ? "" : request.getCreateUser(), StringUtils.isEmpty(request.getModifyUser()) ? "" : request.getModifyUser(), TableDataTypeEnum.LINKIS_UDF.getCode(), dataVisibilityIds, userInDb.getUsername(), request.getPage(), request.getSize());
-//            linkisUdfList = linkisUdfPage.getContent();
-//            totalCount = new Long(linkisUdfPage.getTotalElements()).intValue();
-//        }
         DataInfo<UdfResponse> responseDataInfo = new DataInfo<>();
-
-        // Call linkis names api. List<String> linkisUdfNames = linkisUdfList.stream().map(LinkisUdf::getName).collect(Collectors.toList());
-
-//        for (LinkisUdf linkisUdf : linkisUdfList) {
-//            UdfResponse udfResponse = new UdfResponse(linkisUdf);
-//            List<DepartmentSubInfoResponse> departmentInfoResponses = new ArrayList<>();
-//            List<DataVisibility> dataVisibilityList = dataVisibilityService.filter(linkisUdf.getId(), TableDataTypeEnum.LINKIS_UDF);
-//            if (CollectionUtils.isNotEmpty(dataVisibilityList)) {
-//                departmentInfoResponses = dataVisibilityList.stream().map(dataVisibility -> {
-//                    DepartmentSubInfoResponse departmentInfoResponse = new DepartmentSubInfoResponse();
-//                    departmentInfoResponse.setId(dataVisibility.getDepartmentSubId());
-//                    departmentInfoResponse.setName(dataVisibility.getDepartmentSubName());
-//                    return departmentInfoResponse;
-//                }).collect(Collectors.toList());
-//            }
-//            udfResponse.setVisibilityDepartmentList(departmentInfoResponses);
-//            udfResponseList.add(udfResponse);
-//        }
-//        responseDataInfo.setContent(udfResponseList);
-//        responseDataInfo.setTotalCount(totalCount);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_GET_UDF}", responseDataInfo);
     }
 
     @Override
     @Transactional(rollbackFor = {Exception.class, RuntimeException.class, UnExpectedRequestException.class})
     public GeneralResponse<UdfResponse> deleteUdf(UdfRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException, MetaDataAcquireFailedException, JSONException, IOException {
-//        UdfRequest.checkRequestForDelete(request);
-//        LinkisUdf linkisUdf = linkisUdfDao.findById(request.getId());
-//        if (linkisUdf == null) {
-//            throw new UnExpectedRequestException("Linkis UDF " + "{&DOES_NOT_EXIST}");
-//        }
-//
-//        LOGGER.info("Start to delete udf with file, request: {}", request.toString());
-//        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-//        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-//        Integer roleType = roleService.getRoleType(userRoles);
-//
-//        subDepartmentPermissionService.checkEditablePermission(roleType, userInDb, linkisUdf.getCreateUser(), request.getDevDepartmentId(), request.getOpsDepartmentId(), false);
-//
-//        Set<LinkisUdfEnableCluster> alreadyExistsLinkisUdfEnableClusterSet = linkisUdf.getLinkisUdfEnableClusterSet();
-//
-//        for (LinkisUdfEnableCluster linkisUdfEnableCluster : alreadyExistsLinkisUdfEnableClusterSet) {
-//            // Step 1. delete udf
-//            // Step 2. delete udf file, high risk !!!
-//            metaDataClient.deleteUdf(linkisUdfEnableCluster.getEnableClusterName(), linkisUdfEnableCluster.getLinkisUdfId(), linkisConfig.getUdfAdmin(), new File(linkisUdf.getUploadPath()).getName());
-//        }
-//        if (Files.exists(Paths.get(linkisUdf.getUploadPath()))) {
-//            Files.delete(Paths.get(linkisUdf.getUploadPath()));
-//        }
-//        linkisUdfDao.delete(linkisUdf);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_DELETE_UDF}", null);
     }
 
     @Override
     @Transactional(rollbackFor = {Exception.class, RuntimeException.class, UnExpectedRequestException.class})
     public GeneralResponse<UdfResponse> switchUdfStatus(Long id, Boolean isLoad) throws UnExpectedRequestException, MetaDataAcquireFailedException, PermissionDeniedRequestException {
-//        LOGGER.info("Start to switch udf status, new status load: {}", isLoad);
-//        User userInDb = userDao.findById(HttpUtils.getUserId(httpServletRequest));
-//        List<UserRole> userRoles = userRoleDao.findByUser(userInDb);
-//        Integer roleType = roleService.getRoleType(userRoles);
-//        LinkisUdf linkisUdf = linkisUdfDao.findById(id);
-//        if (linkisUdf == null) {
-//            throw new UnExpectedRequestException("Linkis UDF " + "{&DOES_NOT_EXIST}");
-//        }
-//        // Check switch permission, like modify.
-//        subDepartmentPermissionService.checkEditablePermission(roleType, userInDb, linkisUdf.getCreateUser(), linkisUdf.getDevDepartmentId(), linkisUdf.getOpsDepartmentId(), false);
-//        Set<LinkisUdfEnableCluster> alreadyExistsLinkisUdfEnableClusterSet = linkisUdf.getLinkisUdfEnableClusterSet();
-//
-//        for (LinkisUdfEnableCluster linkisUdfEnableCluster : alreadyExistsLinkisUdfEnableClusterSet) {
-//            // Every proxy user need switch.
-//            Set<UserProxyUser> userProxyUsers = userInDb.getUserProxyUsers();
-//            for (UserProxyUser userProxyUser : userProxyUsers) {
-//                if (userProxyUser.getProxyUser().getProxyUserName().equals(linkisConfig.getUdfAdmin())) {
-//                    continue;
-//                }
-//                metaDataClient.switchUdfStatus(linkisUdfEnableCluster.getEnableClusterName(), linkisUdfEnableCluster.getLinkisUdfId(), userProxyUser.getProxyUser().getProxyUserName(), isLoad);
-//            }
-//            metaDataClient.switchUdfStatus(linkisUdfEnableCluster.getEnableClusterName(), linkisUdfEnableCluster.getLinkisUdfId(), linkisConfig.getUdfAdmin(), isLoad);
-//        }
-//        linkisUdf.setStatus(isLoad);
-//        linkisUdfDao.save(linkisUdf);
         return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCEED_TO_MODIFY_UDF}", null);
     }
 
@@ -1949,30 +1529,70 @@ public class MetaDataServiceImpl implements MetaDataService {
         addMultiSourceRuleRequest.setUploadRuleMetricValue(request.getUploadRuleMetricValue());
     }
 
-    private void checkRequest(GetUserClusterRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
+    // ==================== Helper Methods ====================
+
+    private String resolveUserName(String proxyUser) {
+        String userName = HttpUtils.getUserName(httpServletRequest);
+        return StringUtils.isNotBlank(proxyUser) ? proxyUser : userName;
     }
 
-    private void checkRequest(GetUserColumnByTableIdRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-
-        checkString(request.getClusterName(), "cluster name");
-        checkString(request.getDbName(), "db name");
-        checkString(request.getTableName(), "table name");
+    private String resolveUserName(String loginUser, String proxyUser) {
+        String base = StringUtils.isNotBlank(loginUser) ? loginUser : HttpUtils.getUserName(httpServletRequest);
+        return StringUtils.isNotBlank(proxyUser) ? proxyUser : base;
     }
 
-    private void checkRequest(GetUserTableByDbIdRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-
-        checkString(request.getClusterName(), "cluster name");
-        checkString(request.getDbName(), "db name");
+    private <T> GetAllResponse<T> buildGetAllResponse(DataInfo<T> dataInfo) {
+        GetAllResponse<T> result = new GetAllResponse<>();
+        result.setTotal(dataInfo.getTotalCount());
+        result.setData(dataInfo.getContent());
+        return result;
     }
+
+    private void populateAuthCredentials(Map<String, Object> connectMap, ConnectParams connectParams, boolean decodePassword) {
+        String authType = connectParams.getAuthType();
+        connectMap.put("authType", authType);
+        if (QualitisConstants.AUTH_TYPE_DPM.equals(authType)) {
+            connectMap.put("objectid", connectParams.getObjectId());
+            connectMap.put("mkPrivate", connectParams.getMkPrivate());
+            connectMap.put("appid", connectParams.getAppId());
+            if (StringUtils.isNotEmpty(connectParams.getDk())) {
+                connectMap.put("dk", connectParams.getDk());
+            }
+        } else if (QualitisConstants.AUTH_TYPE_ACCOUNT_PWD.equals(authType)) {
+            connectMap.put("username", connectParams.getUsername());
+            connectMap.put("password", decodePassword ? CryptoUtils.decode(connectParams.getPassword()) : connectParams.getPassword());
+        }
+        connectMap.put("timestamp", connectParams.getTimeStamp());
+    }
+
+    private LinkisDataSourceRequest buildLinkisDataSourceRequest(DataSourceModifyRequest request) {
+        LinkisDataSourceRequest linkisDataSourceRequest = new LinkisDataSourceRequest();
+        BeanUtils.copyProperties(request, linkisDataSourceRequest);
+        if (CollectionUtils.isNotEmpty(request.getDataSourceEnvs())) {
+            ConnectParams sharedConnectParams = request.getDataSourceEnvs().get(0).getConnectParams();
+            LinkisConnectParamsRequest connectParamsRequest = new LinkisConnectParamsRequest();
+            BeanUtils.copyProperties(sharedConnectParams, connectParamsRequest);
+            linkisDataSourceRequest.setSharedConnectParams(connectParamsRequest);
+        }
+        linkisDataSourceRequest.setLabels(StringUtils.join(request.getLabels(), SpecCharEnum.COMMA.getValue()));
+        return linkisDataSourceRequest;
+    }
+
+    private LinkisDataSourceEnvRequest toLinkisDataSourceEnvRequest(DataSourceEnv dataSourceEnv, Long dataSourceTypeId) {
+        LinkisDataSourceEnvRequest linkisDataSourceEnvRequest = new LinkisDataSourceEnvRequest();
+        linkisDataSourceEnvRequest.setDataSourceTypeId(dataSourceTypeId);
+        linkisDataSourceEnvRequest.setEnvName(dataSourceEnv.getEnvName());
+        linkisDataSourceEnvRequest.setEnvDesc(dataSourceEnv.getEnvDesc());
+        linkisDataSourceEnvRequest.setDcnNum(dataSourceEnv.getDcnNum());
+        linkisDataSourceEnvRequest.setLogicArea(dataSourceEnv.getLogicArea());
+        linkisDataSourceEnvRequest.setDatabaseInstance(dataSourceEnv.getDatabaseInstance());
+        LinkisConnectParamsRequest connectParamsRequest = new LinkisConnectParamsRequest();
+        BeanUtils.copyProperties(dataSourceEnv.getConnectParams(), connectParamsRequest);
+        linkisDataSourceEnvRequest.setConnectParamsRequest(connectParamsRequest);
+        return linkisDataSourceEnvRequest;
+    }
+
+    // ==================== Validation Methods ====================
 
     private void checkRequest(GetUserColumnByCsRequest request) throws UnExpectedRequestException {
         if (request == null) {
@@ -1998,54 +1618,7 @@ public class MetaDataServiceImpl implements MetaDataService {
         }
 
 
-        checkString(request.getClusterName(), "cluster name");
-    }
-
-    private void checkRequest(GetUserDbByClusterRequest request) throws UnExpectedRequestException {
-        if (request == null) {
-            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
-        }
-
-        checkString(request.getClusterName(), "cluster name");
-    }
-
-    private void checkString(String str, String strName) throws UnExpectedRequestException {
-        if (StringUtils.isBlank(str)) {
-            throw new UnExpectedRequestException(strName + " {&CAN_NOT_BE_NULL_OR_EMPTY}");
-        }
-    }
-
-    private void checkRequest(DataSourceModifyRequest request) throws UnExpectedRequestException {
-        if (Integer.valueOf(QualitisConstants.DATASOURCE_MANAGER_INPUT_TYPE_AUTO).equals(request.getInputType())) {
-            CommonChecker.checkListMinSize(request.getDcnSequence(), 1, "dcnSequence");
-        }
-        if (StringUtils.isNotBlank(request.getDcnRangeType())
-                && !Arrays.asList("all", QualitisConstants.CMDB_KEY_DCN_NUM, QualitisConstants.CMDB_KEY_LOGIC_AREA).contains(request.getDcnRangeType())) {
-            throw new UnExpectedRequestException("Invalid parameter: dcn_range_type");
-        }
-        List<DataSourceEnv> dataSourceEnvs = request.getDataSourceEnvs();
-        CommonChecker.checkObject(dataSourceEnvs, "dataSourceEnvs");
-        CommonChecker.checkListMinSize(dataSourceEnvs, 1, "dataSourceEnvs");
-        Pattern pattern = Pattern.compile(ENV_NAME_REGEX);
-        for (DataSourceEnv dataSourceEnv : dataSourceEnvs) {
-            ConnectParams connectParams = dataSourceEnv.getConnectParams();
-            CommonChecker.checkObject(connectParams, "dataSourceEnvs.connectParams");
-            CommonChecker.checkString(connectParams.getHost(), "host");
-            CommonChecker.checkString(connectParams.getPort(), "port");
-            CommonChecker.checkString(dataSourceEnv.getEnvName(), "dataSourceEnvs.envName");
-            Matcher matcher = pattern.matcher(dataSourceEnv.getEnvName());
-            if (!matcher.matches()) {
-                throw new UnExpectedRequestException("Invalid envName, cannot use ',' and ':'");
-            }
-            if (QualitisConstants.AUTH_TYPE_DPM.equals(connectParams.getAuthType())) {
-                CommonChecker.checkString(connectParams.getMkPrivate(), "mkPrivate");
-                CommonChecker.checkString(connectParams.getAppId(), "appId");
-                CommonChecker.checkString(connectParams.getObjectId(), "objectId");
-            } else if (QualitisConstants.AUTH_TYPE_ACCOUNT_PWD.equals(connectParams.getAuthType())) {
-                CommonChecker.checkString(connectParams.getUsername(), "username");
-                CommonChecker.checkString(connectParams.getPassword(), "password");
-            }
-        }
+        CommonChecker.checkString(request.getClusterName(), "cluster name");
     }
 
     private void addPrefixToEnvName(Long dataSourceId, List<DataSourceEnv> dataSourceEnvList) throws UnExpectedRequestException {

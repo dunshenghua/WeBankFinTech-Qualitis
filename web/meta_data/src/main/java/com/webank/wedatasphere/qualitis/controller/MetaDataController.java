@@ -79,159 +79,112 @@ public class MetaDataController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MetaDataController.class);
 
+    @FunctionalInterface
+    private interface MetaDataAction<T> {
+        GeneralResponse<T> execute() throws Exception;
+    }
+
+    private <T> GeneralResponse<T> handleRequest(MetaDataAction<T> action, String errorMsgKey) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        try {
+            return action.execute();
+        } catch (UnExpectedRequestException e) {
+            throw e;
+        } catch (PermissionDeniedRequestException e) {
+            throw e;
+        } catch (MetaDataAcquireFailedException e) {
+            LOGGER.error("Failed to process metadata request, caused by: {}", e.getMessage(), e);
+            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
+        } catch (ResourceAccessException e) {
+            LOGGER.error("Failed to access third-party service, caused by: {}", e.getMessage(), e);
+            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&PARAMS_ERROR_FOR_THIRD_PART_SERVICE}", null);
+        } catch (Exception e) {
+            LOGGER.error("Failed to process metadata request, caused by: {}", e.getMessage(), e);
+            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, errorMsgKey, null);
+        }
+    }
+
+    // ==================== Hive Metadata ====================
+
     @POST
     @Path("cluster")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllClusterResponse<ClusterInfoDetail>> getUserCluster(GetUserClusterRequest request) throws UnExpectedRequestException {
-        try {
-            return metaDataService.getUserCluster(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error("Failed to get cluster. DataMap api response error, caused by: {}", e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error("Failed to get cluster, caused by: {}", e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_CLUSTER}", null);
-        }
+    public GeneralResponse<GetAllClusterResponse<ClusterInfoDetail>> getUserCluster(GetUserClusterRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getUserCluster(request), "{&FAILED_TO_GET_CLUSTER}");
     }
 
     @POST
     @Path("db")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllResponse<DbInfoDetail>> getUserDbByCluster(GetUserDbByClusterRequest request) throws UnExpectedRequestException {
-        try {
-            return metaDataService.getUserDbByCluster(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error("Failed to get database. DataMap api response error, caused by: {}", e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error("Failed to get database by cluster: {}, caused by: {}", request.getClusterName(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_DATABASE_BY_CLUSTER}", null);
-        }
+    public GeneralResponse<GetAllResponse<DbInfoDetail>> getUserDbByCluster(GetUserDbByClusterRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getUserDbByCluster(request), "{&FAILED_TO_GET_DATABASE_BY_CLUSTER}");
     }
 
     @POST
     @Path("table")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllResponse<TableInfoDetail>> getUserTableByDbId(GetUserTableByDbIdRequest request) throws UnExpectedRequestException {
-        try {
-            return metaDataService.getUserTableByDbId(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error("Failed to get table. DataMap api response error, caused by: {}", e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error("Failed to get table by database: {}.{}, caused by: {}", request.getClusterName(), request.getDbName(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_TABLE_BY_DATABASE}", null);
-        }
+    public GeneralResponse<GetAllResponse<TableInfoDetail>> getUserTableByDbId(GetUserTableByDbIdRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getUserTableByDbId(request), "{&FAILED_TO_GET_TABLE_BY_DATABASE}");
     }
 
     @POST
     @Path("cs_table")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllResponse<CsTableInfoDetail>> getContextServiceTableByCsId(GetUserTableByCsIdRequest request) throws UnExpectedRequestException {
-        try {
-            return metaDataService.getUserTableByCsId(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error("Failed to get table. Context Service api response error, caused by: {}", e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error("Failed to get table by context service ID: {}, caused by: {}",  request.getCsId(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_TABLE_BY_CSID}", null);
-        }
+    public GeneralResponse<GetAllResponse<CsTableInfoDetail>> getContextServiceTableByCsId(GetUserTableByCsIdRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getUserTableByCsId(request), "{&FAILED_TO_GET_TABLE_BY_CSID}");
     }
 
     @POST
     @Path("column")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllResponse<ColumnInfoDetail>> getUserColumnByTableId(GetUserColumnByTableIdRequest request) throws UnExpectedRequestException {
-        try {
-            return metaDataService.getUserColumnByTableId(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error("Failed to get column. DataMap api response error, caused by: {}", e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error("Failed to get column by table: {}.{}.{}, caused by: {}", request.getClusterName(), request.getDbName(), request.getTableName(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_COLUMN_BY_TABLE}", null);
-        }
+    public GeneralResponse<GetAllResponse<ColumnInfoDetail>> getUserColumnByTableId(GetUserColumnByTableIdRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getUserColumnByTableId(request), "{&FAILED_TO_GET_COLUMN_BY_TABLE}");
     }
 
     @POST
     @Path("cs_column")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<GetAllResponse<ColumnInfoDetail>> getUserColumnByContextService(GetUserColumnByCsRequest request) throws UnExpectedRequestException {
-        try {
-            return metaDataService.getUserColumnByCsId(request);
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error("Failed to get column. Context Service api response error, caused by: {}", e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error("Failed to get column by table's context key: {}, caused by: {}", request.getContextKey(), e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_COLUMN_BY_TABLE}", null);
-        }
+    public GeneralResponse<GetAllResponse<ColumnInfoDetail>> getUserColumnByContextService(GetUserColumnByCsRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getUserColumnByCsId(request), "{&FAILED_TO_GET_COLUMN_BY_TABLE}");
     }
+
+    // ==================== Multi-DB Rules ====================
 
     @POST
     @Path("mul_db")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<MulDbResponse> addMultiDbRules(MulDbRequest request) throws UnExpectedRequestException {
-        try {
+    public GeneralResponse<MulDbResponse> addMultiDbRules(MulDbRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             String dbs = metaDataService.addMultiDbRules(request);
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&SUCCESS_MUL_DBS_COMPARE}", new MulDbResponse(dbs));
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (Exception e) {
-            LOGGER.error("Failed to create multi-db rules, caused by: {}", e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_ADD_MULTI_SOURCE_RULE}", null);
-        }
+        }, "{&FAILED_TO_ADD_MULTI_SOURCE_RULE}");
     }
+
+    // ==================== SubSystem / Product ====================
 
     @POST
     @Path("subSystemInfo")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<List<SubSystemResponse>> getSubSystemInfo() throws UnExpectedRequestException {
-        try {
-            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_SUB_SYSTEM_INFO_SUCCESS}", operateCiService.getAllSubSystemInfo());
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (Exception e) {
-            LOGGER.error("Failed to get sub_system info, caused by: " + e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_SUB_SYSTEM_INFO_CMDB}", null);
-        }
+    public GeneralResponse<List<SubSystemResponse>> getSubSystemInfo() throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_SUB_SYSTEM_INFO_SUCCESS}", operateCiService.getAllSubSystemInfo()), "{&FAILED_TO_GET_SUB_SYSTEM_INFO_CMDB}");
     }
 
     @POST
     @Path("productInfo")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<List<ProductResponse>> getProductInfo() throws UnExpectedRequestException {
-        try {
-            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_PRODUCT_INFO_SUCCESS}", operateCiService.getAllProductInfo());
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (Exception e) {
-            LOGGER.error("Failed to get product info, caused by: {}", e.getMessage());
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_PRODUCT_INFO_CMDB}", null);
-        }
+    public GeneralResponse<List<ProductResponse>> getProductInfo() throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_PRODUCT_INFO_SUCCESS}", operateCiService.getAllProductInfo()), "{&FAILED_TO_GET_PRODUCT_INFO_CMDB}");
     }
+
+    // ==================== Department / DevOps ====================
 
     @POST
     @Path("system/departmentInfo")
@@ -253,34 +206,24 @@ public class MetaDataController {
     @Path("system/departmentInfoWithRole")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<List<CmdbDepartmentResponse>> getDepartmentInfoListByRoleType() throws UnExpectedRequestException {
-        try {
-            return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_DEPARTMENT_INFO_SUCCESS}", metaDataService.getDepartmentInfoListByRoleType(null));
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (Exception e) {
-            LOGGER.error("Failed to get department info, caused by: {}", e.getMessage());
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_DEPARTMENT_INFO}", null);
-        }
+    public GeneralResponse<List<CmdbDepartmentResponse>> getDepartmentInfoListByRoleType() throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_DEPARTMENT_INFO_SUCCESS}", metaDataService.getDepartmentInfoListByRoleType(null)), "{&FAILED_TO_GET_DEPARTMENT_INFO}");
     }
 
     @GET
     @Path("system/devAndOpsInfoWithRole/{deptCode}")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<List<DepartmentSubResponse>> getDevAndOpsInfoByRoleTypeAndSourceType(@PathParam("deptCode") Integer deptCode) throws UnExpectedRequestException {
-        try {
+    public GeneralResponse<List<DepartmentSubResponse>> getDevAndOpsInfoByRoleTypeAndSourceType(@PathParam("deptCode") Integer deptCode) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (deptCode == null) {
                 throw new UnExpectedRequestException("Dept code {&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_DEPARTMENT_INFO_SUCCESS}", metaDataService.getDevAndOpsInfoListByRoleType(null, deptCode));
-        } catch (UnExpectedRequestException e) {
-            throw new UnExpectedRequestException(e.getMessage());
-        } catch (Exception e) {
-            LOGGER.error("Failed to get department info, caused by: {}", e.getMessage());
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_DEPARTMENT_INFO}", null);
-        }
+        }, "{&FAILED_TO_GET_DEPARTMENT_INFO}");
     }
+
+    // ==================== DataMap Queries ====================
 
     @GET
     @Path("datamap/database")
@@ -360,44 +303,28 @@ public class MetaDataController {
         }
     }
 
+    // ==================== Data Source Management ====================
+
     @GET
     @Path("data_source/types/all")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<Map<String, Object>> getAllDataSourceTypes(@QueryParam("proxyUser") String proxyUser) {
-        try {
+    public GeneralResponse<Map<String, Object>> getAllDataSourceTypes(@QueryParam("proxyUser") String proxyUser) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.getAllDataSourceTypes(clusterName, proxyUser);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @GET
     @Path("data_source/env")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<Map<String, Object>> getDataSourceEnv(@QueryParam("proxyUser") String proxyUser) {
-        try {
+    public GeneralResponse<Map<String, Object>> getDataSourceEnv(@QueryParam("proxyUser") String proxyUser) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.getDataSourceEnv(clusterName, proxyUser);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @GET
@@ -405,39 +332,19 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<List<DataSourceEnvResponse>> envList(@QueryParam("dataSourceId") Long dataSourceId
-                                                            , @QueryParam("dcnRangeType") String dcnRangeType) {
-        try {
+                                                            , @QueryParam("dcnRangeType") String dcnRangeType) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.getEnvList(clusterName, dataSourceId, dcnRangeType);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @POST
     @Path("data_source/info/advance")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse getDataSourceAdvanceInfo(GetDataSourceRequest request) {
-        try {
-            return metaDataService.getDataSourceInfoWithAdvance(request);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+    public GeneralResponse getDataSourceAdvanceInfo(GetDataSourceRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getDataSourceInfoWithAdvance(request), "Failed");
     }
 
     @GET
@@ -445,23 +352,14 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<Map<String, Object>> getDataSourceVersions(@QueryParam("proxyUser") String proxyUser
-    , @QueryParam("dataSourceId") Long dataSourceId) {
-        try {
+    , @QueryParam("dataSourceId") Long dataSourceId) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (dataSourceId == null) {
                 throw new UnExpectedRequestException("Data source ID" + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.getDataSourceVersions(clusterName, proxyUser, dataSourceId);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @GET
@@ -469,8 +367,8 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<Map<String, Object>> getDataSourceInfoPage(@QueryParam("currentPage") Integer currentPage, @QueryParam("pageSize") Integer pageSize, @QueryParam("name") String searchName
-            , @QueryParam("typeId") Long typeId, @QueryParam("typeName") String typeName) {
-        try {
+            , @QueryParam("typeId") Long typeId, @QueryParam("typeName") String typeName) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             GetDataSourceRequest request = new GetDataSourceRequest();
             request.setName(searchName);
             request.setDataSourceTypeId(typeId);
@@ -478,16 +376,7 @@ public class MetaDataController {
             request.setPage(currentPage);
             request.setSize(pageSize);
             return metaDataService.getDataSourceInfoWithAdvance(request);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @GET
@@ -495,72 +384,42 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<Map<String, Object>> getDataSourceInfoDetail(@QueryParam("proxyUser") String proxyUser
-    , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("versionId") Long versionId) {
-        try {
+    , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("versionId") Long versionId) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (dataSourceId == null) {
                 throw new UnExpectedRequestException("Data source ID or version ID " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.getDataSourceInfoDetail(clusterName, proxyUser, dataSourceId, versionId);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @GET
     @Path("data_source/key_define/type")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<Map<String, Object>> getDataSourceKeyDefine(@QueryParam("proxyUser") String proxyUser, @QueryParam("keyId") Long keyId) {
-        try {
+    public GeneralResponse<Map<String, Object>> getDataSourceKeyDefine(@QueryParam("proxyUser") String proxyUser, @QueryParam("keyId") Long keyId) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (keyId == null) {
                 throw new UnExpectedRequestException("Key ID " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.getDataSourceKeyDefine(clusterName, proxyUser, keyId);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @POST
     @Path("data_source/connect")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<Map<String, Object>> connectDataSource(@QueryParam("proxyUser") String proxyUser, @RequestBody DataSourceConnectRequest request) {
-        try {
+    public GeneralResponse<Map<String, Object>> connectDataSource(@QueryParam("proxyUser") String proxyUser, @RequestBody DataSourceConnectRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (request == null) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.connectDataSource(clusterName, proxyUser, request);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (ResourceAccessException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&PARAMS_ERROR_FOR_THIRD_PART_SERVICE}", null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&CONNECT_FAILED}", null);
-        }
+        }, "{&CONNECT_FAILED}");
     }
 
     @POST
@@ -568,26 +427,14 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<Map<String, Object>> publishDataSource(@QueryParam("proxyUser") String proxyUser
-        , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("versionId") Long versionId) {
-        try {
+        , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("versionId") Long versionId) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (dataSourceId == null || versionId == null) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.publishDataSource(clusterName, proxyUser, dataSourceId, versionId);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (ResourceAccessException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&PARAMS_ERROR_FOR_THIRD_PART_SERVICE}", null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @POST
@@ -595,110 +442,56 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<Map<String, Object>> expireDataSource(@QueryParam("proxyUser") String proxyUser
-        , @QueryParam("dataSourceId") Long dataSourceId) {
-        try {
+        , @QueryParam("dataSourceId") Long dataSourceId) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (dataSourceId == null) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.expireDataSource(clusterName, proxyUser, dataSourceId);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (ResourceAccessException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&PARAMS_ERROR_FOR_THIRD_PART_SERVICE}", null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @POST
     @Path("data_source/modify")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse modifyDataSource(@QueryParam("dataSourceId") Long dataSourceId, DataSourceModifyRequest request) throws PermissionDeniedRequestException {
-        try {
+    public GeneralResponse modifyDataSource(@QueryParam("dataSourceId") Long dataSourceId, DataSourceModifyRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (request == null || dataSourceId == null) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.modifyDataSource(clusterName, dataSourceId, request);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (ResourceAccessException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&PARAMS_ERROR_FOR_THIRD_PART_SERVICE}", null);
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        }  catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @POST
     @Path("data_source/param/modify")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse modifyDataSourceParam(@QueryParam("dataSourceId") Long dataSourceId, @RequestBody DataSourceParamModifyRequest request) {
-        try {
+    public GeneralResponse modifyDataSourceParam(@QueryParam("dataSourceId") Long dataSourceId, @RequestBody DataSourceParamModifyRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (request == null || dataSourceId == null) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.modifyDataSourceParam(clusterName, dataSourceId, request);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (ResourceAccessException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&PARAMS_ERROR_FOR_THIRD_PART_SERVICE}", null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed", null);
-        }
+        }, "Failed");
     }
 
     @POST
     @Path("data_source/create")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse createDataSource(@RequestBody DataSourceModifyRequest request) throws PermissionDeniedRequestException {
-        try {
+    public GeneralResponse createDataSource(@RequestBody DataSourceModifyRequest request) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (request == null) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.createDataSource(clusterName, request);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (ResourceAccessException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&PARAMS_ERROR_FOR_THIRD_PART_SERVICE}", null);
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        }  catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        }
+        }, "Failed");
     }
 
     @GET
@@ -706,8 +499,8 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<GetAllResponse<DbInfoDetail>> getDbsByDataSource(@QueryParam("proxyUser") String proxyUser
-        , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("envId") Long envId) {
-        try {
+        , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("envId") Long envId) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (dataSourceId == null) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
@@ -724,16 +517,7 @@ public class MetaDataController {
             allResponse.setTotal(CollectionUtils.isEmpty(dbInfoDetails) ? 0 : dbInfoDetails.size());
             allResponse.setData(dbInfoDetails);
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_DB_SUCCESSFULLY}", allResponse);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_DATABASE_BY_CLUSTER}", null);
-        }
+        }, "{&FAILED_TO_GET_DATABASE_BY_CLUSTER}");
     }
 
     @GET
@@ -741,8 +525,8 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<GetAllResponse<TableInfoDetail>> getTablesByDataSource(@QueryParam("proxyUser") String proxyUser
-        , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("envId") Long envId, @QueryParam("dbName") String dbName) {
-        try {
+        , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("envId") Long envId, @QueryParam("dbName") String dbName) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (dataSourceId == null || StringUtils.isBlank(dbName)) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
@@ -758,16 +542,7 @@ public class MetaDataController {
             allResponse.setTotal(CollectionUtils.isEmpty(tableInfoDetails) ? 0 : tableInfoDetails.size());
             allResponse.setData(tableInfoDetails);
             return new GeneralResponse<>(ResponseStatusConstants.OK, "{&GET_TABLE_SUCCESSFULLY}", allResponse);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_TABLE_BY_DATABASE}", null);
-        }
+        }, "{&FAILED_TO_GET_TABLE_BY_DATABASE}");
     }
 
     @GET
@@ -775,55 +550,32 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<GetAllResponse<ColumnInfoDetail>> getColumnsByDataSource(@QueryParam("proxyUser") String proxyUser
-        , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("envId") Long envId, @QueryParam("dbName") String dbName, @QueryParam("tableName") String tableName) {
-        try {
+        , @QueryParam("dataSourceId") Long dataSourceId, @QueryParam("envId") Long envId, @QueryParam("dbName") String dbName, @QueryParam("tableName") String tableName) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             if (dataSourceId == null || StringUtils.isBlank(dbName) || StringUtils.isBlank(tableName)) {
                 throw new UnExpectedRequestException("Request " + "{&CAN_NOT_BE_NULL_OR_EMPTY}");
             }
             String clusterName = linkisConfig.getDatasourceCluster();
             return metaDataService.getColumnsByDataSource(clusterName, proxyUser, dataSourceId, dbName, tableName, envId);
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, e.getMessage(), null);
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_COLUMN_BY_TABLE}", null);
-        }
+        }, "{&FAILED_TO_GET_COLUMN_BY_TABLE}");
     }
+
+    // ==================== UDF Management ====================
 
     @POST
     @Path("udf/upload")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.MULTIPART_FORM_DATA)
-    public GeneralResponse<String> uploadFile(@FormDataParam("file") InputStream fileInputStream, @FormDataParam("file") FormDataContentDisposition fileDisposition) {
-        try {
-            return fileService.uploadFile(fileInputStream, fileDisposition, "");
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_UPLOAD_FILE}", null);
-        }
+    public GeneralResponse<String> uploadFile(@FormDataParam("file") InputStream fileInputStream, @FormDataParam("file") FormDataContentDisposition fileDisposition) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> fileService.uploadFile(fileInputStream, fileDisposition, ""), "{&FAILED_TO_UPLOAD_FILE}");
     }
 
     @GET
     @Path("udf/directory")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<List<String>> getDirectory(@QueryParam("category") String category, @QueryParam("cluster_name") String clusterName) throws UnExpectedRequestException, MetaDataAcquireFailedException {
-        try {
-            return metaDataService.getDirectory(category, clusterName);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_CATEGORY_LIST}", null);
-        }
+    public GeneralResponse<List<String>> getDirectory(@QueryParam("category") String category, @QueryParam("cluster_name") String clusterName) throws UnExpectedRequestException, MetaDataAcquireFailedException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getDirectory(category, clusterName), "{&FAILED_TO_GET_CATEGORY_LIST}");
     }
 
     @POST
@@ -831,21 +583,7 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<UdfResponse> addUdf(UdfRequest udfRequest) throws UnExpectedRequestException, PermissionDeniedRequestException, MetaDataAcquireFailedException {
-        try {
-            return metaDataService.addUdf(udfRequest);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_ADD_UDF}", null);
-        }
+        return handleRequest(() -> metaDataService.addUdf(udfRequest), "{&FAILED_TO_ADD_UDF}");
     }
 
     @POST
@@ -853,21 +591,7 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<UdfResponse> modifyUdf(UdfRequest udfRequest) throws UnExpectedRequestException, PermissionDeniedRequestException, MetaDataAcquireFailedException {
-        try {
-            return metaDataService.modifyUdf(udfRequest);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_MODIFY_UDF}", null);
-        }
+        return handleRequest(() -> metaDataService.modifyUdf(udfRequest), "{&FAILED_TO_MODIFY_UDF}");
     }
 
     @GET
@@ -875,31 +599,15 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<UdfResponse> getUdfDetail(@QueryParam("id") Long id) throws UnExpectedRequestException, PermissionDeniedRequestException {
-        try {
-            return metaDataService.getUdfDetail(id);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_UDF}", null);
-        }
+        return handleRequest(() -> metaDataService.getUdfDetail(id), "{&FAILED_TO_GET_UDF}");
     }
 
     @POST
     @Path("udf/all")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse<DataInfo<UdfResponse>> getUdfAllWithPage(UdfRequest udfRequest) throws UnExpectedRequestException {
-        try {
-            return metaDataService.getUdfAllWithPage(udfRequest);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_GET_UDF}", null);
-        }
+    public GeneralResponse<DataInfo<UdfResponse>> getUdfAllWithPage(UdfRequest udfRequest) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> metaDataService.getUdfAllWithPage(udfRequest), "{&FAILED_TO_GET_UDF}");
     }
 
     @POST
@@ -907,21 +615,7 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<UdfResponse> deleteUdf(UdfRequest udfRequest) throws UnExpectedRequestException, PermissionDeniedRequestException, MetaDataAcquireFailedException {
-        try {
-            return metaDataService.deleteUdf(udfRequest);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (PermissionDeniedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_DELETE_UDF}", null);
-        }
+        return handleRequest(() -> metaDataService.deleteUdf(udfRequest), "{&FAILED_TO_DELETE_UDF}");
     }
 
     @GET
@@ -929,37 +623,22 @@ public class MetaDataController {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public GeneralResponse<UdfResponse> switchUdfStatus(@QueryParam("id") Long id, @QueryParam("is_load") Boolean isLoad) throws UnExpectedRequestException, PermissionDeniedRequestException, MetaDataAcquireFailedException {
-        try {
-            return metaDataService.switchUdfStatus(id, isLoad);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (MetaDataAcquireFailedException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "{&FAILED_TO_MODIFY_UDF}", null);
-        }
+        return handleRequest(() -> metaDataService.switchUdfStatus(id, isLoad), "{&FAILED_TO_MODIFY_UDF}");
     }
+
+    // ==================== DCN / Misc ====================
 
     @POST
     @Path("dcn")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public GeneralResponse getDcn(GetDcnRequest getDcnRequest) throws UnExpectedRequestException {
-        try {
+    public GeneralResponse getDcn(GetDcnRequest getDcnRequest) throws UnExpectedRequestException, PermissionDeniedRequestException {
+        return handleRequest(() -> {
             CommonChecker.checkObject(getDcnRequest.getSubSystemId(), "sub_system_id");
             CommonChecker.checkString(getDcnRequest.getDcnRangeType(), "dcn_range_type");
             Object result = metaDataService.getDcnList(getDcnRequest.getSubSystemId(), getDcnRequest.getDcnRangeType(), Collections.emptyList());
             return new GeneralResponse(ResponseStatusConstants.OK, "success", result);
-        } catch (UnExpectedRequestException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw e;
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage(), e);
-            return new GeneralResponse<>(ResponseStatusConstants.SERVER_ERROR, "Failed to get dcn tdsql info.", null);
-        }
+        }, "Failed to get dcn tdsql info.");
     }
 
     @GET

@@ -17,6 +17,7 @@
 package com.webank.wedatasphere.qualitis.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.webank.wedatasphere.qualitis.exception.UnExpectedRequestException;
 
 /**
  * @author howeye
@@ -34,6 +35,12 @@ public class GetUserClusterRequest {
     public GetUserClusterRequest() {
         startIndex = DEFAULT_START_INDEX;
         pageSize = DEFAULT_PAGE_SIZE;
+    }
+
+    public static void checkRequest(GetUserClusterRequest request) throws UnExpectedRequestException {
+        if (request == null) {
+            throw new UnExpectedRequestException("{&REQUEST_CAN_NOT_BE_NULL}");
+        }
     }
 
     public Integer getStartIndex() {

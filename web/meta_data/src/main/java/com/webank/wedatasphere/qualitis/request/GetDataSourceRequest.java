@@ -121,7 +121,7 @@ public class GetDataSourceRequest {
 
     @Override
     public String toString() {
-        return "QueryDataSourceRequest{" +
+        return "GetDataSourceRequest{" +
                 "name='" + name + '\'' +
                 ", dataSourceTypeId=" + dataSourceTypeId +
                 ", subSystem='" + subSystem + '\'' +
